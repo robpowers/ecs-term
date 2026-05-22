@@ -1,0 +1,12 @@
+# Binary
+ecs-term
+
+# Config (may contain sensitive profile names)
+ecs-term.yaml
+
+# Claude Code
+.claude/
+
+# Go
+*.test
+*.out

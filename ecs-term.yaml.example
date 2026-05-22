@@ -1,0 +1,13 @@
+current_context: my-cluster
+
+contexts:
+  - name: my-cluster
+    cluster: my-ecs-cluster         # ECS cluster name or ARN
+    region: us-east-1
+    aws_profile: my-sso-profile     # AWS profile name from ~/.aws/config
+    refresh_interval: 30            # auto-refresh interval in seconds (default: 30)
+
+  - name: staging
+    cluster: staging-cluster
+    region: us-west-2
+    aws_profile: staging-sso
