@@ -76,7 +76,7 @@ func main() {
 		if ok {
 			if cs, ok := clients[ctx.Name]; ok {
 				svcView := views.NewServicesView(*ctx, cs)
-				appModel = model.NewAppModelWithInitialPush(cfg, &contextSelector, &svcView, clients)
+				appModel = model.NewAppModelWithInitialPush(cfg, &contextSelector, &svcView, clients, *ctx)
 			}
 		}
 	}

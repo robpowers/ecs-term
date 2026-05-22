@@ -14,13 +14,14 @@ import (
 )
 
 type AppModel struct {
-	navigator  Navigator
-	statusBar  ui.StatusBar
-	errOverlay ui.ErrorOverlay
-	width      int
-	height     int
-	allClients map[string]*awsclient.ClientSet
-	cfg        *config.Config
+	navigator           Navigator
+	statusBar           ui.StatusBar
+	errOverlay          ui.ErrorOverlay
+	width               int
+	height              int
+	allClients          map[string]*awsclient.ClientSet
+	cfg                 *config.Config
+	pendingAccountFetch string
 }
 
 func NewAppModel(cfg *config.Config, initialView View, clients map[string]*awsclient.ClientSet) AppModel {
@@ -39,14 +40,23 @@ func NewAppModel(cfg *config.Config, initialView View, clients map[string]*awscl
 
 // NewAppModelWithInitialPush creates an AppModel with an extra view already pushed
 // on top of the context selector (used for single-context auto-navigation).
-func NewAppModelWithInitialPush(cfg *config.Config, initialView View, pushed View, clients map[string]*awsclient.ClientSet) AppModel {
+func NewAppModelWithInitialPush(cfg *config.Config, initialView View, pushed View, clients map[string]*awsclient.ClientSet, ctx config.Context) AppModel {
 	m := NewAppModel(cfg, initialView, clients)
 	m.navigator.Push(pushed)
 	m.statusBar.KeyHints = pushed.KeyHints()
+	m.statusBar.ContextName = ctx.Name
+	m.statusBar.Region = ctx.Region
+	m.statusBar.AccountID = "loading…"
+	m.pendingAccountFetch = ctx.Name
 	return m
 }
 
 func (m AppModel) Init() tea.Cmd {
+	if m.pendingAccountFetch != "" {
+		if cs, ok := m.allClients[m.pendingAccountFetch]; ok {
+			return tea.Batch(m.navigator.Current().Init(), FetchAccountIDCmd(cs))
+		}
+	}
 	return m.navigator.Current().Init()
 }
 
