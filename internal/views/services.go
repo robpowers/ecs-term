@@ -190,17 +190,16 @@ func (m *ServicesView) SetSize(w, h int) {
 func toTableRows(services []domain.ECSService) []table.Row {
 	rows := make([]table.Row, len(services))
 	for i, s := range services {
-		statusStyle := ui.StatusColor(s.Status)
-		indicator := ui.HealthyStyle.Render("●")
+		indicator := "●"
 		if !s.IsHealthy {
-			indicator = ui.WarningStyle.Render("●")
+			indicator = "○"
 		}
 		if strings.ToUpper(s.Status) != "ACTIVE" {
-			indicator = ui.ErrorFgStyle.Render("●")
+			indicator = "✕"
 		}
 		rows[i] = table.Row{
 			indicator + " " + s.Name,
-			statusStyle.Render(s.Status),
+			s.Status,
 			fmt.Sprintf("%d", s.DesiredCount),
 			fmt.Sprintf("%d", s.RunningCount),
 			fmt.Sprintf("%d", s.PendingCount),
