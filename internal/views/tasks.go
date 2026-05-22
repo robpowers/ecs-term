@@ -7,8 +7,8 @@ import (
 	"time"
 
 	"github.com/charmbracelet/bubbles/key"
-	"github.com/charmbracelet/bubbles/list"
 	"github.com/charmbracelet/bubbles/spinner"
+	"github.com/charmbracelet/bubbles/table"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
@@ -19,30 +19,17 @@ import (
 	"github.com/robpowers/ecs-term/internal/ui"
 )
 
-type taskItem struct{ task domain.ECSTask }
-
-func (i taskItem) Title() string {
-	style := ui.StatusColor(i.task.LastStatus)
-	age := ""
-	if i.task.StartedAt != nil {
-		d := time.Since(*i.task.StartedAt).Round(time.Second)
-		age = fmt.Sprintf("  age: %s", d)
-	}
-	return style.Render("●") + " " + i.task.ShortID + age
-}
-
-func (i taskItem) Description() string {
-	containers := make([]string, 0, len(i.task.Containers))
-	for _, c := range i.task.Containers {
-		containers = append(containers, c.Name+":"+c.Status)
-	}
-	return fmt.Sprintf("status: %-12s  containers: %s", i.task.LastStatus, strings.Join(containers, ", "))
-}
-
-func (i taskItem) FilterValue() string { return i.task.ShortID }
+const (
+	taskColIDW      = 12
+	taskColStartedW = 19
+	taskColStatusW  = 10
+	taskColPadding  = 2
+	taskNumCols     = 4
+	taskFixedWidths = taskColIDW + taskColStartedW + taskColStatusW + taskColPadding*taskNumCols
+)
 
 type TasksView struct {
-	list        list.Model
+	table       table.Model
 	items       []domain.ECSTask
 	loading     bool
 	err         error
@@ -52,32 +39,40 @@ type TasksView struct {
 	serviceName string
 	taskDefARN  string
 	lastFetch   time.Time
+	width       int
+	height      int
 }
 
 func NewTasksView(ctx config.Context, clients *awsclient.ClientSet, serviceName, taskDefARN string) TasksView {
-	delegate := list.NewDefaultDelegate()
-	delegate.Styles.SelectedTitle = ui.SelectedStyle
-	delegate.Styles.SelectedDesc = ui.SelectedStyle.Foreground(lipgloss.Color("#333333"))
-
-	l := list.New(nil, delegate, 0, 0)
-	l.Title = "Tasks"
-	l.Styles.Title = ui.TitleStyle
-	l.SetShowStatusBar(false)
-	l.SetFilteringEnabled(false)
-	l.KeyMap.Quit.SetKeys()
+	t := table.New(
+		table.WithFocused(true),
+		table.WithStyles(tasksTableStyles()),
+	)
+	km := table.DefaultKeyMap()
+	km.HalfPageDown.SetKeys()
+	km.HalfPageUp.SetKeys()
+	t.KeyMap = km
 
 	sp := spinner.New()
 	sp.Spinner = spinner.Dot
 	sp.Style = ui.HealthyStyle
 
 	return TasksView{
-		list:        l,
+		table:       t,
 		loading:     true,
 		ctx:         ctx,
 		clients:     clients,
 		spinner:     sp,
 		serviceName: serviceName,
 		taskDefARN:  taskDefARN,
+	}
+}
+
+func tasksTableStyles() table.Styles {
+	return table.Styles{
+		Header:   lipgloss.NewStyle().Bold(true).Foreground(ui.ColorPrimary).Padding(0, 1),
+		Cell:     lipgloss.NewStyle().Padding(0, 1),
+		Selected: ui.SelectedStyle.Padding(0, 1),
 	}
 }
 
@@ -121,11 +116,7 @@ func (m *TasksView) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.err = nil
 		m.items = msg.Tasks
 		m.lastFetch = time.Now()
-		listItems := make([]list.Item, len(msg.Tasks))
-		for i, t := range msg.Tasks {
-			listItems[i] = taskItem{t}
-		}
-		m.list.SetItems(listItems)
+		m.table.SetRows(toTaskTableRows(msg.Tasks))
 		return m, nil
 
 	case tea.KeyMsg:
@@ -136,25 +127,23 @@ func (m *TasksView) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.loading = true
 			return m, tea.Batch(m.spinner.Tick, m.fetchCmd())
 		case key.Matches(msg, model.GlobalKeys.Enter):
-			if item := m.list.SelectedItem(); item != nil {
-				task := item.(taskItem).task
-				if len(task.Containers) == 0 {
-					return m, nil
-				}
-				// Default to first container for logs
-				container := task.Containers[0]
-				lv := NewLogsView(m.ctx, m.clients, task.TaskARN, m.taskDefARN, container.Name)
-				return m, func() tea.Msg {
-					return model.NavigatePushMsg{View: &lv}
-				}
+			cursor := m.table.Cursor()
+			if cursor < 0 || cursor >= len(m.items) {
+				return m, nil
 			}
+			task := m.items[cursor]
+			if len(task.Containers) == 0 {
+				return m, nil
+			}
+			lv := NewLogsView(m.ctx, m.clients, task.TaskARN, m.taskDefARN, task.Containers[0].Name)
+			return m, func() tea.Msg { return model.NavigatePushMsg{View: &lv} }
 		case key.Matches(msg, model.GlobalKeys.Detail):
-			if item := m.list.SelectedItem(); item != nil {
-				dv := NewContainerDetailView(m.ctx, m.clients, m.taskDefARN)
-				return m, func() tea.Msg {
-					return model.NavigatePushMsg{View: &dv}
-				}
+			cursor := m.table.Cursor()
+			if cursor < 0 || cursor >= len(m.items) {
+				return m, nil
 			}
+			dv := NewContainerDetailView(m.ctx, m.clients, m.taskDefARN)
+			return m, func() tea.Msg { return model.NavigatePushMsg{View: &dv} }
 		}
 
 	case spinner.TickMsg:
@@ -167,7 +156,7 @@ func (m *TasksView) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 
 	var cmd tea.Cmd
-	m.list, cmd = m.list.Update(msg)
+	m.table, cmd = m.table.Update(msg)
 	return m, cmd
 }
 
@@ -182,10 +171,44 @@ func (m *TasksView) View() string {
 	if len(m.items) == 0 {
 		return ui.DimStyle.Render("\n  No running tasks")
 	}
-	return m.list.View()
+	title := ui.TitleStyle.Width(m.width).Align(lipgloss.Center).Render("Tasks")
+	return lipgloss.JoinVertical(lipgloss.Left, title, m.table.View())
 }
 
 func (m *TasksView) SetSize(w, h int) {
-	m.list.SetSize(w, h)
-	m.list.Styles.Title = ui.TitleStyle.Width(w).Align(lipgloss.Center)
+	m.width = w
+	m.height = h
+	containersW := w - taskFixedWidths
+	if containersW < 10 {
+		containersW = 10
+	}
+	m.table.SetColumns([]table.Column{
+		{Title: "Task ID", Width: taskColIDW},
+		{Title: "Started", Width: taskColStartedW},
+		{Title: "Status", Width: taskColStatusW},
+		{Title: "Containers", Width: containersW},
+	})
+	m.table.SetHeight(h - 2)
+	m.table.SetWidth(w)
+}
+
+func toTaskTableRows(tasks []domain.ECSTask) []table.Row {
+	rows := make([]table.Row, len(tasks))
+	for i, t := range tasks {
+		started := "—"
+		if t.StartedAt != nil {
+			started = t.StartedAt.Local().Format("2006-01-02 15:04:05")
+		}
+		names := make([]string, 0, len(t.Containers))
+		for _, c := range t.Containers {
+			names = append(names, c.Name)
+		}
+		rows[i] = table.Row{
+			t.ShortID,
+			started,
+			t.LastStatus,
+			strings.Join(names, ", "),
+		}
+	}
+	return rows
 }
