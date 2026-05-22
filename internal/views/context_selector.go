@@ -110,4 +110,5 @@ func (m *ContextSelector) View() string {
 
 func (m *ContextSelector) SetSize(w, h int) {
 	m.list.SetSize(w, h)
+	m.list.Styles.Title = ui.TitleStyle.Width(w).Align(lipgloss.Center)
 }

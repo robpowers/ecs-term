@@ -162,7 +162,7 @@ func (m *ServicesView) View() string {
 	if len(m.items) == 0 {
 		return ui.DimStyle.Render("\n  No services found")
 	}
-	title := ui.TitleStyle.Padding(0, 1).Render("Services")
+	title := ui.TitleStyle.Width(m.width).Align(lipgloss.Center).Render("Services")
 	return lipgloss.JoinVertical(lipgloss.Left, title, m.table.View())
 }
 

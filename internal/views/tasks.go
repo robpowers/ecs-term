@@ -187,4 +187,5 @@ func (m *TasksView) View() string {
 
 func (m *TasksView) SetSize(w, h int) {
 	m.list.SetSize(w, h)
+	m.list.Styles.Title = ui.TitleStyle.Width(w).Align(lipgloss.Center)
 }
