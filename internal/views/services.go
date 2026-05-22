@@ -19,11 +19,12 @@ import (
 	"github.com/robpowers/ecs-term/internal/ui"
 )
 
-// fixed widths for the non-name columns (content width, excluding cell padding)
+// Fixed widths for the non-name columns (content width, excluding cell padding).
+// Each column adds 2 for cell padding (Padding(0,1) = 1 left + 1 right).
 const (
 	colStatusW  = 10
 	colCountW   = 8
-	colPadding  = 2 // lipgloss cell Padding(0,1) adds 1 left + 1 right
+	colPadding  = 2
 	numCols     = 5
 	fixedWidths = colStatusW + colCountW*3 + colPadding*numCols
 )
@@ -44,9 +45,8 @@ type ServicesView struct {
 func NewServicesView(ctx config.Context, clients *awsclient.ClientSet) ServicesView {
 	t := table.New(
 		table.WithFocused(true),
-		table.WithStyles(tableStyles()),
+		table.WithStyles(servicesTableStyles()),
 	)
-	// disable keys that conflict with global bindings
 	km := table.DefaultKeyMap()
 	km.HalfPageDown.SetKeys()
 	km.HalfPageUp.SetKeys()
@@ -65,14 +65,12 @@ func NewServicesView(ctx config.Context, clients *awsclient.ClientSet) ServicesV
 	}
 }
 
-func tableStyles() table.Styles {
+func servicesTableStyles() table.Styles {
 	return table.Styles{
+		// No border — header is 1 line, keeping height math simple.
 		Header: lipgloss.NewStyle().
 			Bold(true).
 			Foreground(ui.ColorPrimary).
-			BorderStyle(lipgloss.NormalBorder()).
-			BorderForeground(ui.ColorSecondary).
-			BorderBottom(true).
 			Padding(0, 1),
 		Cell:     lipgloss.NewStyle().Padding(0, 1),
 		Selected: ui.SelectedStyle.Padding(0, 1),
@@ -130,15 +128,11 @@ func (m *ServicesView) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.loading = true
 			return m, tea.Batch(m.spinner.Tick, m.fetchCmd())
 		case key.Matches(msg, model.GlobalKeys.Enter):
-			row := m.table.SelectedRow()
-			if row == nil {
+			cursor := m.table.Cursor()
+			if cursor < 0 || cursor >= len(m.items) {
 				return m, nil
 			}
-			// match selected row back to the service by name
-			svc := m.findService(row[0])
-			if svc == nil {
-				return m, nil
-			}
+			svc := m.items[cursor]
 			tv := NewTasksView(m.ctx, m.clients, svc.Name, svc.TaskDefARN)
 			return m, func() tea.Msg { return model.NavigatePushMsg{View: &tv} }
 		}
@@ -158,19 +152,17 @@ func (m *ServicesView) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m *ServicesView) View() string {
-	title := ui.TitleStyle.Render(fmt.Sprintf("Services — %s", m.ctx.Cluster))
 	if m.loading && len(m.items) == 0 {
-		return title + "\n\n  " + m.spinner.View() + " Loading services…"
+		return fmt.Sprintf("\n  %s Loading services…", m.spinner.View())
 	}
 	if m.err != nil && len(m.items) == 0 {
-		return title + "\n\n" +
-			ui.ErrorFgStyle.Render("  Error: "+m.err.Error()) +
+		return ui.ErrorFgStyle.Render("\n  Error: "+m.err.Error()) +
 			ui.DimStyle.Render("\n  Press r to retry")
 	}
 	if len(m.items) == 0 {
-		return title + "\n\n" + ui.DimStyle.Render("  No services found")
+		return ui.DimStyle.Render("\n  No services found")
 	}
-	return title + "\n" + m.table.View()
+	return m.table.View()
 }
 
 func (m *ServicesView) SetSize(w, h int) {
@@ -187,27 +179,18 @@ func (m *ServicesView) SetSize(w, h int) {
 		{Title: "Running", Width: colCountW},
 		{Title: "Pending", Width: colCountW},
 	})
-	// subtract 1 for the title line and 1 for the header border
-	m.table.SetHeight(h - 2)
+	// table.View() = header (1 line) + "\n" + viewport.
+	// SetHeight(h) sets viewport.Height = h - lipgloss.Height(header) = h - 1.
+	// So table.View() total = 1 + 1 + (h-1) = h+1 — one too many.
+	// Pass h-1 so viewport.Height = h-2, giving table.View() = 1+1+(h-2) = h lines.
+	m.table.SetHeight(h - 1)
 	m.table.SetWidth(w)
-}
-
-// findService looks up a service by name, stripping any ANSI prefix from the row.
-func (m *ServicesView) findService(nameCell string) *domain.ECSService {
-	plain := stripANSI(nameCell)
-	for i := range m.items {
-		if m.items[i].Name == plain {
-			return &m.items[i]
-		}
-	}
-	return nil
 }
 
 func toTableRows(services []domain.ECSService) []table.Row {
 	rows := make([]table.Row, len(services))
 	for i, s := range services {
 		statusStyle := ui.StatusColor(s.Status)
-		// healthy indicator prepended to name
 		indicator := ui.HealthyStyle.Render("●")
 		if !s.IsHealthy {
 			indicator = ui.WarningStyle.Render("●")
@@ -224,26 +207,4 @@ func toTableRows(services []domain.ECSService) []table.Row {
 		}
 	}
 	return rows
-}
-
-// stripANSI removes ANSI escape codes to recover the plain service name.
-func stripANSI(s string) string {
-	// lipgloss renders ANSI; the name starts after "● " (the indicator + space)
-	// Find the last occurrence of 'm' in the ANSI prefix and strip from there.
-	// Simpler: split on 'm' run and take the remainder after the reset sequence.
-	for i := 0; i < len(s)-1; i++ {
-		if s[i] == 0x1b && s[i+1] == '[' {
-			// skip to end of this escape sequence
-			for j := i + 2; j < len(s); j++ {
-				if s[j] == 'm' {
-					s = s[:i] + s[j+1:]
-					i--
-					break
-				}
-			}
-		}
-	}
-	// trim the "● " indicator prefix
-	s = strings.TrimPrefix(s, "● ")
-	return strings.TrimSpace(s)
 }
