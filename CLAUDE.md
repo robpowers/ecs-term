@@ -43,8 +43,9 @@ internal/ui/
   statusbar.go                  StatusBar — Header() and Footer() renderers
   error_overlay.go              dismissable centered error overlay
 internal/views/                 one file per view, all methods on pointer receivers
+  util.go                       shared helpers (tickEvery)
   context_selector.go           View 1: pick a context from config
-  services.go                   View 2: ECS services list with health status
+  services.go                   View 2: ECS services table (bubbles/table) with health status
   tasks.go                      View 3: tasks within a service
   logs.go                       View 4: CloudWatch logs viewport with follow-tail mode
   container_detail.go           View 5: task definition containers — env vars, ports, health check
