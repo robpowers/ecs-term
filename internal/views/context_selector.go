@@ -40,17 +40,6 @@ func NewContextSelector(cfg *config.Config, clients map[string]*awsclient.Client
 	km.HalfPageUp.SetKeys()
 	t.KeyMap = km
 
-	t.SetRows(toContextTableRows(cfg.Contexts))
-
-	if cfg.CurrentContext != "" {
-		for i, ctx := range cfg.Contexts {
-			if ctx.Name == cfg.CurrentContext {
-				t.SetCursor(i)
-				break
-			}
-		}
-	}
-
 	return ContextSelector{
 		table:   t,
 		items:   cfg.Contexts,
@@ -130,6 +119,15 @@ func (m *ContextSelector) SetSize(w, h int) {
 		{Title: "Region", Width: ctxColRegionW},
 		{Title: "SSO Profile", Width: ctxColProfileW},
 	})
+	m.table.SetRows(toContextTableRows(m.items))
+	if m.cfg.CurrentContext != "" {
+		for i, ctx := range m.items {
+			if ctx.Name == m.cfg.CurrentContext {
+				m.table.SetCursor(i)
+				break
+			}
+		}
+	}
 	m.table.SetHeight(h - 2)
 	m.table.SetWidth(w)
 }
