@@ -60,7 +60,7 @@ func NewTasksView(ctx config.Context, clients *awsclient.ClientSet, serviceName,
 	delegate.Styles.SelectedDesc = ui.SelectedStyle.Foreground(lipgloss.Color("#333333"))
 
 	l := list.New(nil, delegate, 0, 0)
-	l.Title = fmt.Sprintf("Tasks — %s", serviceName)
+	l.Title = "Tasks"
 	l.Styles.Title = ui.TitleStyle
 	l.SetShowStatusBar(false)
 	l.SetFilteringEnabled(false)

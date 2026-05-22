@@ -40,7 +40,7 @@ func NewContextSelector(cfg *config.Config, clients map[string]*awsclient.Client
 	delegate.Styles.SelectedDesc = ui.SelectedStyle.Foreground(lipgloss.Color("#333333"))
 
 	l := list.New(items, delegate, 0, 0)
-	l.Title = "Select a context"
+	l.Title = "Contexts"
 	l.Styles.Title = ui.TitleStyle
 	l.SetShowStatusBar(false)
 	l.SetFilteringEnabled(false)

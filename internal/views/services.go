@@ -162,7 +162,8 @@ func (m *ServicesView) View() string {
 	if len(m.items) == 0 {
 		return ui.DimStyle.Render("\n  No services found")
 	}
-	return m.table.View()
+	title := ui.TitleStyle.Padding(0, 1).Render("Services")
+	return lipgloss.JoinVertical(lipgloss.Left, title, m.table.View())
 }
 
 func (m *ServicesView) SetSize(w, h int) {
@@ -181,9 +182,9 @@ func (m *ServicesView) SetSize(w, h int) {
 	})
 	// table.View() = header (1 line) + "\n" + viewport.
 	// SetHeight(h) sets viewport.Height = h - lipgloss.Height(header) = h - 1.
-	// So table.View() total = 1 + 1 + (h-1) = h+1 — one too many.
-	// Pass h-1 so viewport.Height = h-2, giving table.View() = 1+1+(h-2) = h lines.
-	m.table.SetHeight(h - 1)
+	// Title takes 1 line, so table gets h-1 lines → SetHeight(h-2):
+	// viewport.Height = (h-2)-1 = h-3; table.View() = 1+1+(h-3) = h-1; title+table = h.
+	m.table.SetHeight(h - 2)
 	m.table.SetWidth(w)
 }
 
