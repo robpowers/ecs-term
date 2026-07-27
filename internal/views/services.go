@@ -22,11 +22,12 @@ import (
 // Fixed widths for the non-name columns (content width, excluding cell padding).
 // Each column adds 2 for cell padding (Padding(0,1) = 1 left + 1 right).
 const (
-	colStatusW  = 10
-	colCountW   = 8
-	colPadding  = 2
-	numCols     = 5
-	fixedWidths = colStatusW + colCountW*3 + colPadding*numCols
+	colStatusW   = 10
+	colCountW    = 8
+	colDeployedW = 19
+	colPadding   = 2
+	numCols      = 6
+	fixedWidths  = colStatusW + colCountW*3 + colDeployedW + colPadding*numCols
 )
 
 type ServicesView struct {
@@ -73,7 +74,7 @@ func servicesTableStyles() table.Styles {
 			Foreground(ui.ColorPrimary).
 			Padding(0, 1),
 		Cell:     lipgloss.NewStyle().Padding(0, 1),
-		Selected: ui.SelectedStyle.Padding(0, 1),
+		Selected: ui.SelectedStyle,
 	}
 }
 
@@ -190,6 +191,7 @@ func (m *ServicesView) SetSize(w, h int) {
 		{Title: "Desired", Width: colCountW},
 		{Title: "Running", Width: colCountW},
 		{Title: "Pending", Width: colCountW},
+		{Title: "Last Deployed", Width: colDeployedW},
 	})
 	// table.View() = header (1 line) + "\n" + viewport.
 	// SetHeight(h) sets viewport.Height = h - lipgloss.Height(header) = h - 1.
@@ -209,12 +211,17 @@ func toTableRows(services []domain.ECSService) []table.Row {
 		if strings.ToUpper(s.Status) != "ACTIVE" {
 			indicator = "✕"
 		}
+		deployed := "—"
+		if !s.LastDeploymentAt.IsZero() {
+			deployed = s.LastDeploymentAt.Local().Format("2006-01-02 15:04:05")
+		}
 		rows[i] = table.Row{
 			indicator + " " + s.Name,
 			s.Status,
 			fmt.Sprintf("%d", s.DesiredCount),
 			fmt.Sprintf("%d", s.RunningCount),
 			fmt.Sprintf("%d", s.PendingCount),
+			deployed,
 		}
 	}
 	return rows

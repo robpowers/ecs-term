@@ -70,7 +70,7 @@ func NewClusterTasksView(ctx config.Context, clients *awsclient.ClientSet) Clust
 func (m *ClusterTasksView) ViewID() model.ViewID { return model.ViewClusterTasks }
 
 func (m *ClusterTasksView) KeyHints() []string {
-	return []string{"↑/k:up", "↓/j:down", "enter:logs", "d:describe", "c:container", "s:shell", "esc:back", "r:refresh", "q:quit"}
+	return []string{"↑/k:up", "↓/j:down", "l:logs", "d:describe", "c:container", "s:shell", "esc:back", "r:refresh", "q:quit"}
 }
 
 func (m *ClusterTasksView) Init() tea.Cmd {
@@ -130,7 +130,7 @@ func (m *ClusterTasksView) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case key.Matches(msg, model.GlobalKeys.Refresh):
 			m.loading = true
 			return m, tea.Batch(m.spinner.Tick, m.fetchCmd())
-		case key.Matches(msg, model.GlobalKeys.Enter):
+		case key.Matches(msg, model.GlobalKeys.Enter), key.Matches(msg, model.GlobalKeys.Logs):
 			cursor := m.table.Cursor()
 			if cursor < 0 || cursor >= len(m.items) {
 				return m, nil

@@ -70,15 +70,30 @@ func mapService(svc ecstypes.Service) domain.ECSService {
 		created = *svc.CreatedAt
 	}
 
+	var lastDeploy time.Time
+	for _, dep := range svc.Deployments {
+		t := dep.UpdatedAt
+		if t == nil {
+			t = dep.CreatedAt
+		}
+		if t == nil {
+			continue
+		}
+		if t.After(lastDeploy) {
+			lastDeploy = *t
+		}
+	}
+
 	return domain.ECSService{
-		Name:         name,
-		Status:       status,
-		DesiredCount: desired,
-		RunningCount: running,
-		PendingCount: pending,
-		TaskDefARN:   aws.ToString(svc.TaskDefinition),
-		CreatedAt:    created,
-		IsHealthy:    healthy,
+		Name:             name,
+		Status:           status,
+		DesiredCount:     desired,
+		RunningCount:     running,
+		PendingCount:     pending,
+		TaskDefARN:       aws.ToString(svc.TaskDefinition),
+		CreatedAt:        created,
+		LastDeploymentAt: lastDeploy,
+		IsHealthy:        healthy,
 	}
 }
 

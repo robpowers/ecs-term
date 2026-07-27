@@ -52,7 +52,7 @@ func contextTableStyles() table.Styles {
 	return table.Styles{
 		Header:   lipgloss.NewStyle().Bold(true).Foreground(ui.ColorPrimary).Padding(0, 1),
 		Cell:     lipgloss.NewStyle().Padding(0, 1),
-		Selected: ui.SelectedStyle.Padding(0, 1),
+		Selected: ui.SelectedStyle,
 	}
 }
 
