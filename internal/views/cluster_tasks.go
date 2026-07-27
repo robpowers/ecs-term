@@ -70,7 +70,7 @@ func NewClusterTasksView(ctx config.Context, clients *awsclient.ClientSet) Clust
 func (m *ClusterTasksView) ViewID() model.ViewID { return model.ViewClusterTasks }
 
 func (m *ClusterTasksView) KeyHints() []string {
-	return []string{"↑/k:up", "↓/j:down", "enter:logs", "d:container", "t:describe", "s:shell", "esc:back", "r:refresh", "q:quit"}
+	return []string{"↑/k:up", "↓/j:down", "enter:logs", "d:describe", "c:container", "s:shell", "esc:back", "r:refresh", "q:quit"}
 }
 
 func (m *ClusterTasksView) Init() tea.Cmd {
@@ -141,21 +141,21 @@ func (m *ClusterTasksView) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			lv := NewLogsView(m.ctx, m.clients, task.TaskARN, task.TaskDefARN, task.Containers[0].Name)
 			return m, func() tea.Msg { return model.NavigatePushMsg{View: &lv} }
-		case key.Matches(msg, model.GlobalKeys.Detail):
-			cursor := m.table.Cursor()
-			if cursor < 0 || cursor >= len(m.items) {
-				return m, nil
-			}
-			task := m.items[cursor]
-			dv := NewContainerDetailView(m.ctx, m.clients, task.TaskDefARN)
-			return m, func() tea.Msg { return model.NavigatePushMsg{View: &dv} }
-		case key.Matches(msg, model.GlobalKeys.Tasks):
+		case key.Matches(msg, model.GlobalKeys.Describe):
 			cursor := m.table.Cursor()
 			if cursor < 0 || cursor >= len(m.items) {
 				return m, nil
 			}
 			task := m.items[cursor]
 			dv := NewTaskDescribeView(m.ctx, m.clients, task.TaskARN)
+			return m, func() tea.Msg { return model.NavigatePushMsg{View: &dv} }
+		case key.Matches(msg, model.GlobalKeys.Container):
+			cursor := m.table.Cursor()
+			if cursor < 0 || cursor >= len(m.items) {
+				return m, nil
+			}
+			task := m.items[cursor]
+			dv := NewContainerDetailView(m.ctx, m.clients, task.TaskDefARN)
 			return m, func() tea.Msg { return model.NavigatePushMsg{View: &dv} }
 		case key.Matches(msg, model.GlobalKeys.Shell):
 			cursor := m.table.Cursor()

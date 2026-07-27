@@ -13,7 +13,8 @@ type GlobalKeyMap struct {
 	Describe key.Binding
 	Tasks    key.Binding
 	Shell    key.Binding
-	Search   key.Binding
+	Search    key.Binding
+	Container key.Binding
 }
 
 var GlobalKeys = GlobalKeyMap{
@@ -60,5 +61,9 @@ var GlobalKeys = GlobalKeyMap{
 	Search: key.NewBinding(
 		key.WithKeys("/"),
 		key.WithHelp("/", "search"),
+	),
+	Container: key.NewBinding(
+		key.WithKeys("c"),
+		key.WithHelp("c", "container"),
 	),
 }

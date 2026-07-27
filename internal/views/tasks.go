@@ -79,7 +79,7 @@ func tasksTableStyles() table.Styles {
 func (m *TasksView) ViewID() model.ViewID { return model.ViewTasks }
 
 func (m *TasksView) KeyHints() []string {
-	return []string{"↑/k:up", "↓/j:down", "enter:logs", "d:container", "t:describe", "s:shell", "esc:back", "r:refresh", "q:quit"}
+	return []string{"↑/k:up", "↓/j:down", "enter:logs", "d:describe", "c:container", "s:shell", "esc:back", "r:refresh", "q:quit"}
 }
 
 func (m *TasksView) Init() tea.Cmd {
@@ -140,20 +140,20 @@ func (m *TasksView) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			lv := NewLogsView(m.ctx, m.clients, task.TaskARN, m.taskDefARN, task.Containers[0].Name)
 			return m, func() tea.Msg { return model.NavigatePushMsg{View: &lv} }
-		case key.Matches(msg, model.GlobalKeys.Detail):
-			cursor := m.table.Cursor()
-			if cursor < 0 || cursor >= len(m.items) {
-				return m, nil
-			}
-			dv := NewContainerDetailView(m.ctx, m.clients, m.taskDefARN)
-			return m, func() tea.Msg { return model.NavigatePushMsg{View: &dv} }
-		case key.Matches(msg, model.GlobalKeys.Tasks):
+		case key.Matches(msg, model.GlobalKeys.Describe):
 			cursor := m.table.Cursor()
 			if cursor < 0 || cursor >= len(m.items) {
 				return m, nil
 			}
 			task := m.items[cursor]
 			dv := NewTaskDescribeView(m.ctx, m.clients, task.TaskARN)
+			return m, func() tea.Msg { return model.NavigatePushMsg{View: &dv} }
+		case key.Matches(msg, model.GlobalKeys.Container):
+			cursor := m.table.Cursor()
+			if cursor < 0 || cursor >= len(m.items) {
+				return m, nil
+			}
+			dv := NewContainerDetailView(m.ctx, m.clients, m.taskDefARN)
 			return m, func() tea.Msg { return model.NavigatePushMsg{View: &dv} }
 		case key.Matches(msg, model.GlobalKeys.Shell):
 			cursor := m.table.Cursor()

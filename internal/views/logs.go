@@ -83,7 +83,29 @@ func (m *LogsView) KeyHints() []string {
 	if m.following {
 		tailHint = "f:stop-follow"
 	}
-	return []string{tailHint, "1-8/0:window", "/:search", "r:refresh", "esc:back", "q:quit"}
+	return []string{tailHint, "/:search", "r:refresh", "esc:back", "q:quit"}
+}
+
+// windowHints returns the k9s-style "Since" row rendered under the log body.
+// The currently active window is highlighted.
+var windowHintOrder = []struct {
+	key, label string
+}{
+	{"1", "1m"}, {"2", "5m"}, {"3", "15m"}, {"4", "30m"},
+	{"5", "1h"}, {"6", "6h"}, {"7", "12h"}, {"8", "24h"}, {"0", "all"},
+}
+
+func (m *LogsView) windowHints() string {
+	var parts []string
+	for _, w := range windowHintOrder {
+		text := w.key + ":" + w.label
+		if m.windowLabel == w.label {
+			parts = append(parts, ui.SelectedStyle.Render(" "+text+" "))
+		} else {
+			parts = append(parts, ui.KeyHintStyle.Render(w.key)+ui.KeyDescStyle.Render(":"+w.label))
+		}
+	}
+	return ui.DimStyle.Render("Since ") + strings.Join(parts, "  ")
 }
 
 func (m *LogsView) Init() tea.Cmd {
@@ -298,10 +320,11 @@ func (m *LogsView) View() string {
 		return header + "\n\n  " + m.spinner.View() + " Loading logs…"
 	}
 	body := m.viewport.View()
+	windows := m.windowHints()
 	if m.searchMode {
-		return header + "\n" + body + "\n" + m.searchInput.View()
+		return header + "\n" + body + "\n" + m.searchInput.View() + "\n" + windows
 	}
-	return header + "\n" + body
+	return header + "\n" + body + "\n" + windows
 }
 
 func (m *LogsView) headerLine() string {
@@ -325,6 +348,7 @@ func (m *LogsView) SetSize(w, h int) {
 	m.width = w
 	m.height = h
 	m.searchInput.Width = w - 4
+	// header (1) + body + windows-banner (1) + optional search (1) == h
 	body := h - 2
 	if m.searchMode {
 		body -= 1
