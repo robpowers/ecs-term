@@ -80,7 +80,7 @@ func servicesTableStyles() table.Styles {
 func (m *ServicesView) ViewID() model.ViewID { return model.ViewServices }
 
 func (m *ServicesView) KeyHints() []string {
-	return []string{"↑/k:up", "↓/j:down", "enter:tasks", "esc:back", "r:refresh", "q:quit"}
+	return []string{"↑/k:up", "↓/j:down", "enter:tasks", "d:describe", "t:cluster-tasks", "esc:back", "r:refresh", "q:quit"}
 }
 
 func (m *ServicesView) Init() tea.Cmd {
@@ -135,6 +135,17 @@ func (m *ServicesView) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			svc := m.items[cursor]
 			tv := NewTasksView(m.ctx, m.clients, svc.Name, svc.TaskDefARN)
 			return m, func() tea.Msg { return model.NavigatePushMsg{View: &tv} }
+		case key.Matches(msg, model.GlobalKeys.Describe):
+			cursor := m.table.Cursor()
+			if cursor < 0 || cursor >= len(m.items) {
+				return m, nil
+			}
+			svc := m.items[cursor]
+			dv := NewServiceDescribeView(m.ctx, m.clients, svc.Name)
+			return m, func() tea.Msg { return model.NavigatePushMsg{View: &dv} }
+		case key.Matches(msg, model.GlobalKeys.Tasks):
+			cv := NewClusterTasksView(m.ctx, m.clients)
+			return m, func() tea.Msg { return model.NavigatePushMsg{View: &cv} }
 		}
 
 	case spinner.TickMsg:

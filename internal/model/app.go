@@ -110,6 +110,17 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.statusBar.KeyHints = m.navigator.Current().KeyHints()
 		return m, m.navigator.Current().Init()
 
+	case ContainerPickedMsg:
+		if m.navigator.Current().ViewID() == ViewContainerPicker && m.navigator.Depth() > 1 {
+			m.navigator.Pop()
+			m.statusBar.KeyHints = m.navigator.Current().KeyHints()
+		}
+		updated, cmd := m.navigator.Current().Update(msg)
+		if v, ok := updated.(View); ok {
+			m.navigator.stack[len(m.navigator.stack)-1] = v
+		}
+		return m, cmd
+
 	case ContextSelectedMsg:
 		m.statusBar.ContextName = msg.Name
 		m.statusBar.Region = msg.Region
@@ -151,6 +162,32 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.errOverlay.Show(msg.Err.Error())
 		} else {
 			m.statusBar.LastRefresh = time.Now()
+		}
+
+	case ServiceDetailMsg:
+		if msg.Err != nil {
+			m.errOverlay.Show(msg.Err.Error())
+		} else {
+			m.statusBar.LastRefresh = time.Now()
+		}
+
+	case TaskDetailMsg:
+		if msg.Err != nil {
+			m.errOverlay.Show(msg.Err.Error())
+		} else {
+			m.statusBar.LastRefresh = time.Now()
+		}
+
+	case ClusterTasksLoadedMsg:
+		if msg.Err != nil {
+			m.errOverlay.Show(msg.Err.Error())
+		} else {
+			m.statusBar.LastRefresh = time.Now()
+		}
+
+	case ExecFinishedMsg:
+		if msg.Err != nil {
+			m.errOverlay.Show("execute-command failed: " + msg.Err.Error())
 		}
 	}
 

@@ -10,6 +10,10 @@ const (
 	ViewTasks
 	ViewLogs
 	ViewContainerDetail
+	ViewServiceDescribe
+	ViewTaskDescribe
+	ViewClusterTasks
+	ViewContainerPicker
 )
 
 // View is the interface every view model must satisfy.

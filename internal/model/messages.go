@@ -52,6 +52,32 @@ type LogConfigMsg struct {
 	Err         error
 }
 
+type ServiceDetailMsg struct {
+	Detail domain.ECSServiceDetail
+	Err    error
+}
+
+type TaskDetailMsg struct {
+	Detail domain.ECSTaskDetail
+	Err    error
+}
+
+type ClusterTasksLoadedMsg struct {
+	Tasks []domain.ECSTask
+	Err   error
+}
+
+// ContainerPickedMsg is emitted by ContainerPickerView after the user selects
+// a container to shell into.
+type ContainerPickedMsg struct {
+	TaskARN string
+	Name    string
+}
+
+// ExecFinishedMsg is emitted after `aws ecs execute-command` returns control
+// to the TUI.
+type ExecFinishedMsg struct{ Err error }
+
 // Refresh tick
 type RefreshTickMsg struct{ T time.Time }
 

@@ -4,6 +4,7 @@ import "time"
 
 type ECSTask struct {
 	TaskARN       string
+	TaskDefARN    string
 	ShortID       string
 	LastStatus    string
 	HealthStatus  string

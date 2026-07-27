@@ -49,4 +49,8 @@ var (
 			Foreground(lipgloss.Color("#000000")).
 			Background(ColorPrimary).
 			Bold(true)
+
+	HighlightStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("#000000")).
+			Background(ColorYellow)
 )

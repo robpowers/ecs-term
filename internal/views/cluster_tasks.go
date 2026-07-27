@@ -20,30 +20,31 @@ import (
 )
 
 const (
-	taskColIDW      = 12
-	taskColStartedW = 19
-	taskColStatusW  = 10
-	taskColPadding  = 2
-	taskNumCols     = 4
-	taskFixedWidths = taskColIDW + taskColStartedW + taskColStatusW + taskColPadding*taskNumCols
+	ctColIDW      = 12
+	ctColStartedW = 19
+	ctColStatusW  = 10
+	ctColGroupW   = 26
+	ctColPadding  = 2
+	ctNumCols     = 5
+	ctFixedWidths = ctColIDW + ctColStartedW + ctColStatusW + ctColGroupW + ctColPadding*ctNumCols
 )
 
-type TasksView struct {
-	table       table.Model
-	items       []domain.ECSTask
-	loading     bool
-	err         error
-	ctx         config.Context
-	clients     *awsclient.ClientSet
-	spinner     spinner.Model
-	serviceName string
-	taskDefARN  string
-	lastFetch   time.Time
-	width       int
-	height      int
+// ClusterTasksView lists tasks in the cluster that are NOT tied to a service
+// (i.e. one-off task-family runs). Behaves like TasksView for keys.
+type ClusterTasksView struct {
+	table     table.Model
+	items     []domain.ECSTask
+	loading   bool
+	err       error
+	ctx       config.Context
+	clients   *awsclient.ClientSet
+	spinner   spinner.Model
+	lastFetch time.Time
+	width     int
+	height    int
 }
 
-func NewTasksView(ctx config.Context, clients *awsclient.ClientSet, serviceName, taskDefARN string) TasksView {
+func NewClusterTasksView(ctx config.Context, clients *awsclient.ClientSet) ClusterTasksView {
 	t := table.New(
 		table.WithFocused(true),
 		table.WithStyles(tasksTableStyles()),
@@ -57,32 +58,22 @@ func NewTasksView(ctx config.Context, clients *awsclient.ClientSet, serviceName,
 	sp.Spinner = spinner.Dot
 	sp.Style = ui.HealthyStyle
 
-	return TasksView{
-		table:       t,
-		loading:     true,
-		ctx:         ctx,
-		clients:     clients,
-		spinner:     sp,
-		serviceName: serviceName,
-		taskDefARN:  taskDefARN,
+	return ClusterTasksView{
+		table:   t,
+		loading: true,
+		ctx:     ctx,
+		clients: clients,
+		spinner: sp,
 	}
 }
 
-func tasksTableStyles() table.Styles {
-	return table.Styles{
-		Header:   lipgloss.NewStyle().Bold(true).Foreground(ui.ColorPrimary).Padding(0, 1),
-		Cell:     lipgloss.NewStyle().Padding(0, 1),
-		Selected: ui.SelectedStyle.Padding(0, 1),
-	}
-}
+func (m *ClusterTasksView) ViewID() model.ViewID { return model.ViewClusterTasks }
 
-func (m *TasksView) ViewID() model.ViewID { return model.ViewTasks }
-
-func (m *TasksView) KeyHints() []string {
+func (m *ClusterTasksView) KeyHints() []string {
 	return []string{"↑/k:up", "↓/j:down", "enter:logs", "d:container", "t:describe", "s:shell", "esc:back", "r:refresh", "q:quit"}
 }
 
-func (m *TasksView) Init() tea.Cmd {
+func (m *ClusterTasksView) Init() tea.Cmd {
 	return tea.Batch(
 		m.spinner.Tick,
 		m.fetchCmd(),
@@ -90,16 +81,26 @@ func (m *TasksView) Init() tea.Cmd {
 	)
 }
 
-func (m *TasksView) fetchCmd() tea.Cmd {
+func (m *ClusterTasksView) fetchCmd() tea.Cmd {
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 		defer cancel()
-		tasks, err := m.clients.ListTasks(ctx, m.ctx.Cluster, awsclient.ListTasksOpts{ServiceName: m.serviceName})
-		return model.TasksLoadedMsg{Tasks: tasks, Err: err}
+		tasks, err := m.clients.ListTasks(ctx, m.ctx.Cluster, awsclient.ListTasksOpts{})
+		if err != nil {
+			return model.ClusterTasksLoadedMsg{Err: err}
+		}
+		filtered := tasks[:0]
+		for _, t := range tasks {
+			if strings.HasPrefix(t.Group, "service:") {
+				continue
+			}
+			filtered = append(filtered, t)
+		}
+		return model.ClusterTasksLoadedMsg{Tasks: filtered}
 	}
 }
 
-func (m *TasksView) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+func (m *ClusterTasksView) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case model.ContainerPickedMsg:
 		return m, execShellCmd(m.ctx, msg.TaskARN, msg.Name)
@@ -110,7 +111,7 @@ func (m *TasksView) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.fetchCmd(),
 		)
 
-	case model.TasksLoadedMsg:
+	case model.ClusterTasksLoadedMsg:
 		m.loading = false
 		if msg.Err != nil {
 			m.err = msg.Err
@@ -119,7 +120,7 @@ func (m *TasksView) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.err = nil
 		m.items = msg.Tasks
 		m.lastFetch = time.Now()
-		m.table.SetRows(toTaskTableRows(msg.Tasks))
+		m.table.SetRows(toClusterTaskRows(msg.Tasks))
 		return m, nil
 
 	case tea.KeyMsg:
@@ -138,14 +139,15 @@ func (m *TasksView) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if len(task.Containers) == 0 {
 				return m, nil
 			}
-			lv := NewLogsView(m.ctx, m.clients, task.TaskARN, m.taskDefARN, task.Containers[0].Name)
+			lv := NewLogsView(m.ctx, m.clients, task.TaskARN, task.TaskDefARN, task.Containers[0].Name)
 			return m, func() tea.Msg { return model.NavigatePushMsg{View: &lv} }
 		case key.Matches(msg, model.GlobalKeys.Detail):
 			cursor := m.table.Cursor()
 			if cursor < 0 || cursor >= len(m.items) {
 				return m, nil
 			}
-			dv := NewContainerDetailView(m.ctx, m.clients, m.taskDefARN)
+			task := m.items[cursor]
+			dv := NewContainerDetailView(m.ctx, m.clients, task.TaskDefARN)
 			return m, func() tea.Msg { return model.NavigatePushMsg{View: &dv} }
 		case key.Matches(msg, model.GlobalKeys.Tasks):
 			cursor := m.table.Cursor()
@@ -178,39 +180,40 @@ func (m *TasksView) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, cmd
 }
 
-func (m *TasksView) View() string {
+func (m *ClusterTasksView) View() string {
 	if m.loading && len(m.items) == 0 {
-		return fmt.Sprintf("\n  %s Loading tasks…", m.spinner.View())
+		return fmt.Sprintf("\n  %s Loading cluster tasks…", m.spinner.View())
 	}
 	if m.err != nil && len(m.items) == 0 {
 		return ui.ErrorFgStyle.Render("\n  Error: "+m.err.Error()) +
 			ui.DimStyle.Render("\n  Press r to retry")
 	}
 	if len(m.items) == 0 {
-		return ui.DimStyle.Render("\n  No running tasks")
+		return ui.DimStyle.Render("\n  No standalone tasks")
 	}
-	title := ui.TitleStyle.Width(m.width).Align(lipgloss.Center).Render("Tasks")
+	title := ui.TitleStyle.Width(m.width).Align(lipgloss.Center).Render("Standalone Tasks")
 	return lipgloss.JoinVertical(lipgloss.Left, title, m.table.View())
 }
 
-func (m *TasksView) SetSize(w, h int) {
+func (m *ClusterTasksView) SetSize(w, h int) {
 	m.width = w
 	m.height = h
-	containersW := w - taskFixedWidths
+	containersW := w - ctFixedWidths
 	if containersW < 10 {
 		containersW = 10
 	}
 	m.table.SetColumns([]table.Column{
-		{Title: "Task ID", Width: taskColIDW},
-		{Title: "Started", Width: taskColStartedW},
-		{Title: "Status", Width: taskColStatusW},
+		{Title: "Task ID", Width: ctColIDW},
+		{Title: "Started", Width: ctColStartedW},
+		{Title: "Status", Width: ctColStatusW},
+		{Title: "Group", Width: ctColGroupW},
 		{Title: "Containers", Width: containersW},
 	})
 	m.table.SetHeight(h - 2)
 	m.table.SetWidth(w)
 }
 
-func toTaskTableRows(tasks []domain.ECSTask) []table.Row {
+func toClusterTaskRows(tasks []domain.ECSTask) []table.Row {
 	rows := make([]table.Row, len(tasks))
 	for i, t := range tasks {
 		started := "—"
@@ -225,6 +228,7 @@ func toTaskTableRows(tasks []domain.ECSTask) []table.Row {
 			t.ShortID,
 			started,
 			t.LastStatus,
+			t.Group,
 			strings.Join(names, ", "),
 		}
 	}
