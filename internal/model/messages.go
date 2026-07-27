@@ -71,11 +71,21 @@ type ClusterTasksLoadedMsg struct {
 	Err   error
 }
 
+// ContainerAction is what the caller wants to do with the picked container.
+type ContainerAction int
+
+const (
+	ContainerActionShell ContainerAction = iota
+	ContainerActionLogs
+)
+
 // ContainerPickedMsg is emitted by ContainerPickerView after the user selects
-// a container to shell into.
+// a container. Action tells the parent view what to do with it.
 type ContainerPickedMsg struct {
-	TaskARN string
-	Name    string
+	TaskARN    string
+	TaskDefARN string
+	Name       string
+	Action     ContainerAction
 }
 
 // ExecFinishedMsg is emitted after `aws ecs execute-command` returns control

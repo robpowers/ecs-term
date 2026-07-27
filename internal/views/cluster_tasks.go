@@ -103,7 +103,14 @@ func (m *ClusterTasksView) fetchCmd() tea.Cmd {
 func (m *ClusterTasksView) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case model.ContainerPickedMsg:
-		return m, execShellCmd(m.ctx, msg.TaskARN, msg.Name)
+		switch msg.Action {
+		case model.ContainerActionShell:
+			return m, execShellCmd(m.ctx, msg.TaskARN, msg.Name)
+		case model.ContainerActionLogs:
+			lv := NewLogsView(m.ctx, m.clients, msg.TaskARN, msg.TaskDefARN, msg.Name)
+			return m, func() tea.Msg { return model.NavigatePushMsg{View: &lv} }
+		}
+		return m, nil
 
 	case model.RefreshTickMsg:
 		return m, tea.Batch(
@@ -136,11 +143,7 @@ func (m *ClusterTasksView) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 			task := m.items[cursor]
-			if len(task.Containers) == 0 {
-				return m, nil
-			}
-			lv := NewLogsView(m.ctx, m.clients, task.TaskARN, task.TaskDefARN, task.Containers[0].Name)
-			return m, func() tea.Msg { return model.NavigatePushMsg{View: &lv} }
+			return m, logsForTask(m.ctx, m.clients, task, task.TaskDefARN)
 		case key.Matches(msg, model.GlobalKeys.Describe):
 			cursor := m.table.Cursor()
 			if cursor < 0 || cursor >= len(m.items) {

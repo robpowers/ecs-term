@@ -12,19 +12,23 @@ import (
 )
 
 // ContainerPickerView is a small centered menu used to select a container
-// before opening a shell in a multi-container task.
+// before performing a per-container action (shell, logs).
 type ContainerPickerView struct {
 	taskARN    string
+	taskDefARN string
 	containers []string
+	action     model.ContainerAction
 	cursor     int
 	width      int
 	height     int
 }
 
-func NewContainerPickerView(taskARN string, containers []string) ContainerPickerView {
+func NewContainerPickerView(taskARN, taskDefARN string, containers []string, action model.ContainerAction) ContainerPickerView {
 	return ContainerPickerView{
 		taskARN:    taskARN,
+		taskDefARN: taskDefARN,
 		containers: containers,
+		action:     action,
 	}
 }
 
@@ -55,8 +59,13 @@ func (m *ContainerPickerView) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 			name := m.containers[m.cursor]
-			taskARN := m.taskARN
-			return m, func() tea.Msg { return model.ContainerPickedMsg{TaskARN: taskARN, Name: name} }
+			picked := model.ContainerPickedMsg{
+				TaskARN:    m.taskARN,
+				TaskDefARN: m.taskDefARN,
+				Name:       name,
+				Action:     m.action,
+			}
+			return m, func() tea.Msg { return picked }
 		}
 	}
 	return m, nil
@@ -64,7 +73,14 @@ func (m *ContainerPickerView) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (m *ContainerPickerView) View() string {
 	var b strings.Builder
-	b.WriteString(ui.TitleStyle.Render("Select a container") + "\n\n")
+	title := "Select a container"
+	switch m.action {
+	case model.ContainerActionShell:
+		title = "Select a container to shell into"
+	case model.ContainerActionLogs:
+		title = "Select a container to view logs"
+	}
+	b.WriteString(ui.TitleStyle.Render(title) + "\n\n")
 	for i, name := range m.containers {
 		if i == m.cursor {
 			b.WriteString("  " + ui.SelectedStyle.Render("▸ "+name) + "\n")
