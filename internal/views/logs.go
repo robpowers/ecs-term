@@ -70,11 +70,15 @@ func NewLogsView(ctx config.Context, clients *awsclient.ClientSet, taskARN, task
 		containerName: containerName,
 		spinner:       sp,
 		following:     true,
-		windowLabel:   "now",
-		windowSince:   time.Now(),
+		windowLabel:   "all",
+		windowSince:   time.Time{},
 		searchInput:   ti,
 	}
 }
+
+// rawEventsCap bounds the in-memory event buffer so a long-running follow
+// session doesn't grow without bound.
+const rawEventsCap = 5000
 
 func (m *LogsView) ViewID() model.ViewID { return model.ViewLogs }
 
@@ -130,25 +134,25 @@ func (m *LogsView) fetchLogConfigCmd() tea.Cmd {
 	}
 }
 
-// fetchWindowCmd fetches log events starting at `since`. If `since` is zero,
-// the entire stream is returned (limit-bounded).
-func (m *LogsView) fetchWindowCmd(since time.Time) tea.Cmd {
+// fetchRecentCmd loads the most recent events for the stream, replacing the
+// in-memory buffer. Time filtering happens client-side in renderLogs.
+func (m *LogsView) fetchRecentCmd() tea.Cmd {
 	logGroup := m.logGroup
 	logStream := m.logStream
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
-		events, err := m.clients.GetRecentLogs(ctx, logGroup, logStream, 1000, since)
-		return model.LogEventsMsg{Events: events, Err: err}
+		events, err := m.clients.GetRecentLogs(ctx, logGroup, logStream, 1000, time.Time{})
+		return model.LogEventsMsg{Events: events, Replace: true, Err: err}
 	}
 }
 
+// tailLogsCmd polls for events strictly newer than the most recent one we've
+// seen and appends them to the buffer.
 func (m *LogsView) tailLogsCmd() tea.Cmd {
 	var since time.Time
 	if len(m.rawEvents) > 0 {
-		since = m.rawEvents[len(m.rawEvents)-1].Timestamp
-	} else {
-		since = m.windowSince
+		since = m.rawEvents[len(m.rawEvents)-1].Timestamp.Add(1 * time.Millisecond)
 	}
 	logGroup := m.logGroup
 	logStream := m.logStream
@@ -173,7 +177,7 @@ func (m *LogsView) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.streamPrefix = msg.StreamPrefix
 		m.logStream = awsclient.BuildLogStreamName(msg.StreamPrefix, msg.ContainerName, msg.TaskARN)
 		m.configLoaded = true
-		return m, m.fetchWindowCmd(m.windowSince)
+		return m, m.fetchRecentCmd()
 
 	case model.LogEventsMsg:
 		m.loading = false
@@ -185,12 +189,15 @@ func (m *LogsView) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.err = nil
-		if m.following {
-			m.rawEvents = append(m.rawEvents, msg.Events...)
-		} else {
+		if msg.Replace {
 			m.rawEvents = msg.Events
+		} else {
+			m.rawEvents = append(m.rawEvents, msg.Events...)
 		}
-		m.viewport.SetContent(renderLogs(m.rawEvents, m.filter))
+		if len(m.rawEvents) > rawEventsCap {
+			m.rawEvents = m.rawEvents[len(m.rawEvents)-rawEventsCap:]
+		}
+		m.viewport.SetContent(renderLogs(m.rawEvents, m.filter, m.windowSince))
 		if m.following {
 			m.viewport.GotoBottom()
 		}
@@ -216,14 +223,14 @@ func (m *LogsView) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.filter = m.searchInput.Value()
 				m.searchMode = false
 				m.searchInput.Blur()
-				m.viewport.SetContent(renderLogs(m.rawEvents, m.filter))
+				m.viewport.SetContent(renderLogs(m.rawEvents, m.filter, m.windowSince))
 				return m, nil
 			case "esc":
 				m.filter = ""
 				m.searchInput.SetValue("")
 				m.searchMode = false
 				m.searchInput.Blur()
-				m.viewport.SetContent(renderLogs(m.rawEvents, m.filter))
+				m.viewport.SetContent(renderLogs(m.rawEvents, m.filter, m.windowSince))
 				return m, nil
 			}
 			var cmd tea.Cmd
@@ -238,7 +245,7 @@ func (m *LogsView) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.configLoaded {
 				m.loading = true
 				m.rawEvents = nil
-				return m, tea.Batch(m.spinner.Tick, m.fetchWindowCmd(m.windowSince))
+				return m, tea.Batch(m.spinner.Tick, m.fetchRecentCmd())
 			}
 		case key.Matches(msg, model.GlobalKeys.Search):
 			m.searchMode = true
@@ -303,15 +310,18 @@ func windowForKey(k string) (windowChoice, bool) {
 	return windowChoice{}, false
 }
 
+// applyWindow updates the visible time window and re-renders. No refetch — we
+// filter the already-loaded events client-side, so switching windows is
+// instant and predictable regardless of whether new events exist in the
+// requested range.
 func (m *LogsView) applyWindow(label string, since time.Time) tea.Cmd {
 	m.windowLabel = label
 	m.windowSince = since
-	m.rawEvents = nil
-	if !m.configLoaded {
-		return nil
+	m.viewport.SetContent(renderLogs(m.rawEvents, m.filter, m.windowSince))
+	if m.following {
+		m.viewport.GotoBottom()
 	}
-	m.loading = true
-	return tea.Batch(m.spinner.Tick, m.fetchWindowCmd(since))
+	return nil
 }
 
 func (m *LogsView) View() string {
@@ -360,14 +370,19 @@ func (m *LogsView) SetSize(w, h int) {
 	m.viewport.Height = body
 }
 
-func renderLogs(events []domain.LogEvent, filter string) string {
+func renderLogs(events []domain.LogEvent, filter string, since time.Time) string {
 	if len(events) == 0 {
 		return ui.DimStyle.Render("No log events found")
 	}
 	lowerFilter := strings.ToLower(filter)
 	var b strings.Builder
+	inWindow := 0
 	matched := 0
 	for _, e := range events {
+		if !since.IsZero() && e.Timestamp.Before(since) {
+			continue
+		}
+		inWindow++
 		if filter != "" && !strings.Contains(strings.ToLower(e.Message), lowerFilter) {
 			continue
 		}
@@ -379,8 +394,11 @@ func renderLogs(events []domain.LogEvent, filter string) string {
 		}
 		b.WriteString(ts + "  " + msg + "\n")
 	}
+	if inWindow == 0 {
+		return ui.DimStyle.Render(fmt.Sprintf("No events in this window (%d cached — press 0 to see all)", len(events)))
+	}
 	if filter != "" && matched == 0 {
-		return ui.DimStyle.Render(fmt.Sprintf("No matches for %q (%d events fetched)", filter, len(events)))
+		return ui.DimStyle.Render(fmt.Sprintf("No matches for %q in this window (%d events in window)", filter, inWindow))
 	}
 	return b.String()
 }

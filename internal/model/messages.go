@@ -36,7 +36,11 @@ type TasksLoadedMsg struct {
 
 type LogEventsMsg struct {
 	Events []domain.LogEvent
-	Err    error
+	// Replace indicates the receiver should overwrite its buffer with Events
+	// rather than appending. Used for initial loads and manual refreshes;
+	// tail-poll results leave Replace false so new events are appended.
+	Replace bool
+	Err     error
 }
 
 type ContainerDetailMsg struct {
