@@ -282,6 +282,15 @@ func (c *ClientSet) DescribeTaskDefinition(ctx context.Context, taskDefARN strin
 // GetTaskDefinitionRaw returns the full task definition marshaled as both
 // JSON and YAML text. The raw SDK type never leaves this package — only the
 // marshaled strings are returned.
+//
+// yaml.v3 marshals via reflection and can panic (reflect.Value.Interface:
+// cannot return value obtained from unexported field) when it walks into the
+// AWS SDK type's unexported internals. To avoid that, YAML is produced from
+// a JSON round-trip instead: json.Marshal only serializes exported,
+// json-tagged fields, so unmarshaling that JSON into a plain
+// map[string]interface{}/[]interface{} tree gives yaml.v3 nothing but plain
+// data to walk. safeMarshalYAML is still wrapped in a recover as a backstop
+// so a marshaling failure surfaces as an error instead of crashing the TUI.
 func (c *ClientSet) GetTaskDefinitionRaw(ctx context.Context, taskDefARN string) (jsonText, yamlText string, err error) {
 	out, err := c.ECS.DescribeTaskDefinition(ctx, &ecs.DescribeTaskDefinitionInput{
 		TaskDefinition: aws.String(taskDefARN),
@@ -294,11 +303,29 @@ func (c *ClientSet) GetTaskDefinitionRaw(ctx context.Context, taskDefARN string)
 	if err != nil {
 		return "", "", fmt.Errorf("marshal task definition as json: %w", err)
 	}
-	yamlBytes, err := yaml.Marshal(out.TaskDefinition)
+
+	yamlBytes, err := safeMarshalYAMLFromJSON(jsonBytes)
 	if err != nil {
 		return "", "", fmt.Errorf("marshal task definition as yaml: %w", err)
 	}
 	return string(jsonBytes), string(yamlBytes), nil
+}
+
+// safeMarshalYAMLFromJSON re-encodes JSON as YAML via a plain interface{}
+// tree (see GetTaskDefinitionRaw) and recovers from any panic in the
+// underlying yaml.v3 reflection walk, converting it to an error.
+func safeMarshalYAMLFromJSON(jsonBytes []byte) (yamlBytes []byte, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			err = fmt.Errorf("yaml marshal panicked: %v", r)
+		}
+	}()
+
+	var generic interface{}
+	if err := json.Unmarshal(jsonBytes, &generic); err != nil {
+		return nil, fmt.Errorf("unmarshal json for yaml conversion: %w", err)
+	}
+	return yaml.Marshal(generic)
 }
 
 // DescribeServiceFull returns a rich, describe-style view of a single service.
