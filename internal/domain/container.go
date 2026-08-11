@@ -7,6 +7,7 @@ type ContainerDetail struct {
 	MemoryMB        int
 	MemoryReserveMB int
 	EnvVars         []EnvVar
+	Secrets         []Secret
 	HealthCheck     *HealthCheckConfig
 	PortMappings    []PortMapping
 }
@@ -14,6 +15,13 @@ type ContainerDetail struct {
 type EnvVar struct {
 	Name  string
 	Value string
+}
+
+// Secret references a value pulled from Secrets Manager or SSM Parameter
+// Store at container start — never a plaintext value.
+type Secret struct {
+	Name      string
+	ValueFrom string
 }
 
 type HealthCheckConfig struct {

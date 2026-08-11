@@ -53,11 +53,11 @@ func buildHints(hints []string) string {
 
 func StatusColor(status string) lipgloss.Style {
 	switch strings.ToUpper(status) {
-	case "RUNNING", "ACTIVE":
+	case "RUNNING", "ACTIVE", "HEALTHY":
 		return HealthyStyle
-	case "PENDING", "PROVISIONING":
+	case "PENDING", "PROVISIONING", "ACTIVATING", "DEACTIVATING", "STOPPING", "DEPROVISIONING":
 		return WarningStyle
-	case "STOPPED", "INACTIVE", "DRAINING":
+	case "STOPPED", "INACTIVE", "DRAINING", "FAILED", "ERROR", "UNHEALTHY":
 		return ErrorFgStyle
 	default:
 		return DimStyle

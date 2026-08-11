@@ -2,6 +2,7 @@ package aws
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
@@ -9,6 +10,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/ecs"
 	ecstypes "github.com/aws/aws-sdk-go-v2/service/ecs/types"
+	"gopkg.in/yaml.v3"
 
 	"github.com/robpowers/ecs-term/internal/domain"
 )
@@ -227,6 +229,12 @@ func (c *ClientSet) DescribeTaskDefinition(ctx context.Context, taskDefARN strin
 				Value: aws.ToString(e.Value),
 			})
 		}
+		for _, s := range cd.Secrets {
+			detail.Secrets = append(detail.Secrets, domain.Secret{
+				Name:      aws.ToString(s.Name),
+				ValueFrom: aws.ToString(s.ValueFrom),
+			})
+		}
 		for _, pm := range cd.PortMappings {
 			mapping := domain.PortMapping{Protocol: string(pm.Protocol)}
 			if pm.ContainerPort != nil {
@@ -269,6 +277,28 @@ func (c *ClientSet) DescribeTaskDefinition(ctx context.Context, taskDefARN strin
 		details = append(details, detail)
 	}
 	return details, nil
+}
+
+// GetTaskDefinitionRaw returns the full task definition marshaled as both
+// JSON and YAML text. The raw SDK type never leaves this package — only the
+// marshaled strings are returned.
+func (c *ClientSet) GetTaskDefinitionRaw(ctx context.Context, taskDefARN string) (jsonText, yamlText string, err error) {
+	out, err := c.ECS.DescribeTaskDefinition(ctx, &ecs.DescribeTaskDefinitionInput{
+		TaskDefinition: aws.String(taskDefARN),
+	})
+	if err != nil {
+		return "", "", fmt.Errorf("DescribeTaskDefinition: %w", err)
+	}
+
+	jsonBytes, err := json.MarshalIndent(out.TaskDefinition, "", "  ")
+	if err != nil {
+		return "", "", fmt.Errorf("marshal task definition as json: %w", err)
+	}
+	yamlBytes, err := yaml.Marshal(out.TaskDefinition)
+	if err != nil {
+		return "", "", fmt.Errorf("marshal task definition as yaml: %w", err)
+	}
+	return string(jsonBytes), string(yamlBytes), nil
 }
 
 // DescribeServiceFull returns a rich, describe-style view of a single service.

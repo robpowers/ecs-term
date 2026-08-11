@@ -3,6 +3,7 @@ package views
 import (
 	"context"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -19,6 +20,10 @@ import (
 	"github.com/robpowers/ecs-term/internal/ui"
 )
 
+var serviceSortOptions = []sortOption{
+	{"N", "name"}, {"S", "status"}, {"D", "desired"}, {"R", "running"}, {"P", "pending"}, {"L", "deployed"},
+}
+
 // Fixed widths for the non-name columns (content width, excluding cell padding).
 // Each column adds 2 for cell padding (Padding(0,1) = 1 left + 1 right).
 const (
@@ -33,12 +38,16 @@ const (
 type ServicesView struct {
 	table     table.Model
 	items     []domain.ECSService
+	visible   []domain.ECSService
 	loading   bool
 	err       error
 	ctx       config.Context
 	clients   *awsclient.ClientSet
 	spinner   spinner.Model
 	lastFetch time.Time
+	filter    FilterBox
+	sortKey   string
+	sortAsc   bool
 	width     int
 	height    int
 }
@@ -63,6 +72,8 @@ func NewServicesView(ctx config.Context, clients *awsclient.ClientSet) ServicesV
 		ctx:     ctx,
 		clients: clients,
 		spinner: sp,
+		filter:  NewFilterBox(),
+		sortAsc: true,
 	}
 }
 
@@ -81,7 +92,7 @@ func servicesTableStyles() table.Styles {
 func (m *ServicesView) ViewID() model.ViewID { return model.ViewServices }
 
 func (m *ServicesView) KeyHints() []string {
-	return []string{"↑/k:up", "↓/j:down", "enter:tasks", "d:describe", "t:cluster-tasks", "esc:back", "r:refresh", "q:quit"}
+	return []string{"↑/k:up", "↓/j:down", "enter:tasks", "d:describe", "t:cluster-tasks", "e:events", "v:deployments", "/:filter", "esc:back", "r:refresh", "q:quit"}
 }
 
 func (m *ServicesView) Init() tea.Cmd {
@@ -118,35 +129,73 @@ func (m *ServicesView) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.err = nil
 		m.items = msg.Services
 		m.lastFetch = time.Now()
-		m.table.SetRows(toTableRows(msg.Services))
+		m.refreshRows()
 		return m, nil
 
 	case tea.KeyMsg:
+		if handled, cmd := m.filter.HandleKey(msg); handled {
+			m.refreshRows()
+			return m, cmd
+		}
+
 		switch {
 		case key.Matches(msg, model.GlobalKeys.Back):
+			if m.filter.HandleBack() {
+				m.refreshRows()
+				return m, nil
+			}
 			return m, func() tea.Msg { return model.NavigatePopMsg{} }
 		case key.Matches(msg, model.GlobalKeys.Refresh):
 			m.loading = true
 			return m, tea.Batch(m.spinner.Tick, m.fetchCmd())
+		case key.Matches(msg, model.GlobalKeys.Search):
+			return m, m.filter.Start()
 		case key.Matches(msg, model.GlobalKeys.Enter):
 			cursor := m.table.Cursor()
-			if cursor < 0 || cursor >= len(m.items) {
+			if cursor < 0 || cursor >= len(m.visible) {
 				return m, nil
 			}
-			svc := m.items[cursor]
+			svc := m.visible[cursor]
 			tv := NewTasksView(m.ctx, m.clients, svc.Name, svc.TaskDefARN)
 			return m, func() tea.Msg { return model.NavigatePushMsg{View: &tv} }
 		case key.Matches(msg, model.GlobalKeys.Describe):
 			cursor := m.table.Cursor()
-			if cursor < 0 || cursor >= len(m.items) {
+			if cursor < 0 || cursor >= len(m.visible) {
 				return m, nil
 			}
-			svc := m.items[cursor]
+			svc := m.visible[cursor]
 			dv := NewServiceDescribeView(m.ctx, m.clients, svc.Name)
 			return m, func() tea.Msg { return model.NavigatePushMsg{View: &dv} }
 		case key.Matches(msg, model.GlobalKeys.Tasks):
 			cv := NewClusterTasksView(m.ctx, m.clients)
 			return m, func() tea.Msg { return model.NavigatePushMsg{View: &cv} }
+		case msg.String() == "e":
+			cursor := m.table.Cursor()
+			if cursor < 0 || cursor >= len(m.visible) {
+				return m, nil
+			}
+			svc := m.visible[cursor]
+			ev := NewServiceEventsView(m.ctx, m.clients, svc.Name)
+			return m, func() tea.Msg { return model.NavigatePushMsg{View: &ev} }
+		case msg.String() == "v":
+			cursor := m.table.Cursor()
+			if cursor < 0 || cursor >= len(m.visible) {
+				return m, nil
+			}
+			svc := m.visible[cursor]
+			dep := NewDeploymentsView(m.ctx, m.clients, svc.Name)
+			return m, func() tea.Msg { return model.NavigatePushMsg{View: &dep} }
+		}
+
+		if sortKeyMatch(serviceSortOptions, msg.String()) {
+			if m.sortKey == msg.String() {
+				m.sortAsc = !m.sortAsc
+			} else {
+				m.sortKey = msg.String()
+				m.sortAsc = true
+			}
+			m.refreshRows()
+			return m, nil
 		}
 
 	case spinner.TickMsg:
@@ -175,12 +224,18 @@ func (m *ServicesView) View() string {
 		return ui.DimStyle.Render("\n  No services found")
 	}
 	title := ui.TitleStyle.Width(m.width).Align(lipgloss.Center).Render("Services")
-	return lipgloss.JoinVertical(lipgloss.Left, title, m.table.View())
+	lines := []string{title, m.table.View()}
+	if m.filter.Active() {
+		lines = append(lines, m.filter.View())
+	}
+	lines = append(lines, renderSortBanner(serviceSortOptions, m.sortKey, m.sortAsc))
+	return lipgloss.JoinVertical(lipgloss.Left, lines...)
 }
 
 func (m *ServicesView) SetSize(w, h int) {
 	m.width = w
 	m.height = h
+	m.filter.SetWidth(w)
 	nameW := w - fixedWidths
 	if nameW < 10 {
 		nameW = 10
@@ -195,10 +250,82 @@ func (m *ServicesView) SetSize(w, h int) {
 	})
 	// table.View() = header (1 line) + "\n" + viewport.
 	// SetHeight(h) sets viewport.Height = h - lipgloss.Height(header) = h - 1.
-	// Title takes 1 line, so table gets h-1 lines → SetHeight(h-2):
-	// viewport.Height = (h-2)-1 = h-3; table.View() = 1+1+(h-3) = h-1; title+table = h.
-	m.table.SetHeight(h - 2)
+	// Title (1) + sort banner (1) [+ filter box (1)] take the rest of the rows.
+	extra := 3
+	if m.filter.Active() {
+		extra++
+	}
+	th := h - extra
+	if th < 1 {
+		th = 1
+	}
+	m.table.SetHeight(th)
 	m.table.SetWidth(w)
+}
+
+func (m *ServicesView) refreshRows() {
+	m.visible = filterServices(m.items, m.filter.Value())
+	sortServicesInPlace(m.visible, m.sortKey, m.sortAsc)
+	m.table.SetRows(toTableRows(m.visible))
+}
+
+func filterServices(items []domain.ECSService, query string) []domain.ECSService {
+	if query == "" {
+		return append([]domain.ECSService(nil), items...)
+	}
+	q := strings.ToLower(query)
+	out := make([]domain.ECSService, 0, len(items))
+	for _, s := range items {
+		if serviceMatches(s, q) {
+			out = append(out, s)
+		}
+	}
+	return out
+}
+
+func serviceMatches(s domain.ECSService, lowerQuery string) bool {
+	fields := []string{
+		s.Name,
+		s.Status,
+		fmt.Sprintf("%d", s.DesiredCount),
+		fmt.Sprintf("%d", s.RunningCount),
+		fmt.Sprintf("%d", s.PendingCount),
+	}
+	if !s.LastDeploymentAt.IsZero() {
+		fields = append(fields, s.LastDeploymentAt.Local().Format("2006-01-02 15:04:05"))
+	}
+	for _, f := range fields {
+		if strings.Contains(strings.ToLower(f), lowerQuery) {
+			return true
+		}
+	}
+	return false
+}
+
+func sortServicesInPlace(items []domain.ECSService, key string, asc bool) {
+	var less func(i, j int) bool
+	switch key {
+	case "N":
+		less = func(i, j int) bool { return strings.ToLower(items[i].Name) < strings.ToLower(items[j].Name) }
+	case "S":
+		less = func(i, j int) bool { return items[i].Status < items[j].Status }
+	case "D":
+		less = func(i, j int) bool { return items[i].DesiredCount < items[j].DesiredCount }
+	case "R":
+		less = func(i, j int) bool { return items[i].RunningCount < items[j].RunningCount }
+	case "P":
+		less = func(i, j int) bool { return items[i].PendingCount < items[j].PendingCount }
+	case "L":
+		less = func(i, j int) bool { return items[i].LastDeploymentAt.Before(items[j].LastDeploymentAt) }
+	default:
+		return
+	}
+	sort.SliceStable(items, func(i, j int) bool {
+		if asc {
+			return less(i, j)
+		}
+		return less(j, i)
+	})
 }
 
 func toTableRows(services []domain.ECSService) []table.Row {
@@ -217,7 +344,7 @@ func toTableRows(services []domain.ECSService) []table.Row {
 		}
 		rows[i] = table.Row{
 			indicator + " " + s.Name,
-			s.Status,
+			ui.StatusColor(s.Status).Render(s.Status),
 			fmt.Sprintf("%d", s.DesiredCount),
 			fmt.Sprintf("%d", s.RunningCount),
 			fmt.Sprintf("%d", s.PendingCount),

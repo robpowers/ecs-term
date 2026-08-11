@@ -34,12 +34,14 @@ const (
 type ClusterTasksView struct {
 	table     table.Model
 	items     []domain.ECSTask
+	visible   []domain.ECSTask
 	loading   bool
 	err       error
 	ctx       config.Context
 	clients   *awsclient.ClientSet
 	spinner   spinner.Model
 	lastFetch time.Time
+	filter    FilterBox
 	width     int
 	height    int
 }
@@ -64,13 +66,14 @@ func NewClusterTasksView(ctx config.Context, clients *awsclient.ClientSet) Clust
 		ctx:     ctx,
 		clients: clients,
 		spinner: sp,
+		filter:  NewFilterBox(),
 	}
 }
 
 func (m *ClusterTasksView) ViewID() model.ViewID { return model.ViewClusterTasks }
 
 func (m *ClusterTasksView) KeyHints() []string {
-	return []string{"↑/k:up", "↓/j:down", "l:logs", "d:describe", "c:container", "s:shell", "esc:back", "r:refresh", "q:quit"}
+	return []string{"↑/k:up", "↓/j:down", "l:logs", "d:describe", "c:container", "s:shell", "y:yaml", "J:json", "/:filter", "esc:back", "r:refresh", "q:quit"}
 }
 
 func (m *ClusterTasksView) Init() tea.Cmd {
@@ -127,46 +130,73 @@ func (m *ClusterTasksView) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.err = nil
 		m.items = msg.Tasks
 		m.lastFetch = time.Now()
-		m.table.SetRows(toClusterTaskRows(msg.Tasks))
+		m.refreshRows()
 		return m, nil
 
 	case tea.KeyMsg:
+		if handled, cmd := m.filter.HandleKey(msg); handled {
+			m.refreshRows()
+			return m, cmd
+		}
+
 		switch {
 		case key.Matches(msg, model.GlobalKeys.Back):
+			if m.filter.HandleBack() {
+				m.refreshRows()
+				return m, nil
+			}
 			return m, func() tea.Msg { return model.NavigatePopMsg{} }
 		case key.Matches(msg, model.GlobalKeys.Refresh):
 			m.loading = true
 			return m, tea.Batch(m.spinner.Tick, m.fetchCmd())
+		case key.Matches(msg, model.GlobalKeys.Search):
+			return m, m.filter.Start()
 		case key.Matches(msg, model.GlobalKeys.Enter), key.Matches(msg, model.GlobalKeys.Logs):
 			cursor := m.table.Cursor()
-			if cursor < 0 || cursor >= len(m.items) {
+			if cursor < 0 || cursor >= len(m.visible) {
 				return m, nil
 			}
-			task := m.items[cursor]
+			task := m.visible[cursor]
 			return m, logsForTask(m.ctx, m.clients, task, task.TaskDefARN)
 		case key.Matches(msg, model.GlobalKeys.Describe):
 			cursor := m.table.Cursor()
-			if cursor < 0 || cursor >= len(m.items) {
+			if cursor < 0 || cursor >= len(m.visible) {
 				return m, nil
 			}
-			task := m.items[cursor]
+			task := m.visible[cursor]
 			dv := NewTaskDescribeView(m.ctx, m.clients, task.TaskARN)
 			return m, func() tea.Msg { return model.NavigatePushMsg{View: &dv} }
 		case key.Matches(msg, model.GlobalKeys.Container):
 			cursor := m.table.Cursor()
-			if cursor < 0 || cursor >= len(m.items) {
+			if cursor < 0 || cursor >= len(m.visible) {
 				return m, nil
 			}
-			task := m.items[cursor]
+			task := m.visible[cursor]
 			dv := NewContainerDetailView(m.ctx, m.clients, task.TaskDefARN)
 			return m, func() tea.Msg { return model.NavigatePushMsg{View: &dv} }
 		case key.Matches(msg, model.GlobalKeys.Shell):
 			cursor := m.table.Cursor()
-			if cursor < 0 || cursor >= len(m.items) {
+			if cursor < 0 || cursor >= len(m.visible) {
 				return m, nil
 			}
-			task := m.items[cursor]
+			task := m.visible[cursor]
 			return m, shellForTask(m.ctx, task)
+		case msg.String() == "y":
+			cursor := m.table.Cursor()
+			if cursor < 0 || cursor >= len(m.visible) {
+				return m, nil
+			}
+			task := m.visible[cursor]
+			rv := NewTaskDefRawView(m.ctx, m.clients, task.TaskDefARN, "yaml")
+			return m, func() tea.Msg { return model.NavigatePushMsg{View: &rv} }
+		case msg.String() == "J":
+			cursor := m.table.Cursor()
+			if cursor < 0 || cursor >= len(m.visible) {
+				return m, nil
+			}
+			task := m.visible[cursor]
+			rv := NewTaskDefRawView(m.ctx, m.clients, task.TaskDefARN, "json")
+			return m, func() tea.Msg { return model.NavigatePushMsg{View: &rv} }
 		}
 
 	case spinner.TickMsg:
@@ -195,12 +225,17 @@ func (m *ClusterTasksView) View() string {
 		return ui.DimStyle.Render("\n  No standalone tasks")
 	}
 	title := ui.TitleStyle.Width(m.width).Align(lipgloss.Center).Render("Standalone Tasks")
-	return lipgloss.JoinVertical(lipgloss.Left, title, m.table.View())
+	lines := []string{title, m.table.View()}
+	if m.filter.Active() {
+		lines = append(lines, m.filter.View())
+	}
+	return lipgloss.JoinVertical(lipgloss.Left, lines...)
 }
 
 func (m *ClusterTasksView) SetSize(w, h int) {
 	m.width = w
 	m.height = h
+	m.filter.SetWidth(w)
 	containersW := w - ctFixedWidths
 	if containersW < 10 {
 		containersW = 10
@@ -212,8 +247,52 @@ func (m *ClusterTasksView) SetSize(w, h int) {
 		{Title: "Group", Width: ctColGroupW},
 		{Title: "Containers", Width: containersW},
 	})
-	m.table.SetHeight(h - 2)
+	extra := 2
+	if m.filter.Active() {
+		extra++
+	}
+	th := h - extra
+	if th < 1 {
+		th = 1
+	}
+	m.table.SetHeight(th)
 	m.table.SetWidth(w)
+}
+
+func (m *ClusterTasksView) refreshRows() {
+	m.visible = filterClusterTasks(m.items, m.filter.Value())
+	m.table.SetRows(toClusterTaskRows(m.visible))
+}
+
+func filterClusterTasks(items []domain.ECSTask, query string) []domain.ECSTask {
+	if query == "" {
+		return append([]domain.ECSTask(nil), items...)
+	}
+	q := strings.ToLower(query)
+	out := make([]domain.ECSTask, 0, len(items))
+	for _, t := range items {
+		if clusterTaskMatches(t, q) {
+			out = append(out, t)
+		}
+	}
+	return out
+}
+
+func clusterTaskMatches(t domain.ECSTask, lowerQuery string) bool {
+	names := make([]string, 0, len(t.Containers))
+	for _, c := range t.Containers {
+		names = append(names, c.Name)
+	}
+	fields := []string{t.ShortID, t.LastStatus, t.Group, strings.Join(names, ", ")}
+	if t.StartedAt != nil {
+		fields = append(fields, t.StartedAt.Local().Format("2006-01-02 15:04:05"))
+	}
+	for _, f := range fields {
+		if strings.Contains(strings.ToLower(f), lowerQuery) {
+			return true
+		}
+	}
+	return false
 }
 
 func toClusterTaskRows(tasks []domain.ECSTask) []table.Row {
@@ -230,7 +309,7 @@ func toClusterTaskRows(tasks []domain.ECSTask) []table.Row {
 		rows[i] = table.Row{
 			t.ShortID,
 			started,
-			t.LastStatus,
+			ui.StatusColor(t.LastStatus).Render(t.LastStatus),
 			t.Group,
 			strings.Join(names, ", "),
 		}

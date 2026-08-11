@@ -14,6 +14,9 @@ const (
 	ViewTaskDescribe
 	ViewClusterTasks
 	ViewContainerPicker
+	ViewServiceEvents
+	ViewDeployments
+	ViewTaskDefRaw
 )
 
 // View is the interface every view model must satisfy.

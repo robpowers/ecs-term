@@ -8,9 +8,9 @@ import (
 
 	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/spinner"
-	"github.com/charmbracelet/bubbles/textinput"
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 
 	awsclient "github.com/robpowers/ecs-term/internal/aws"
 	"github.com/robpowers/ecs-term/internal/config"
@@ -39,9 +39,8 @@ type LogsView struct {
 	windowLabel string
 	windowSince time.Time
 
-	searchMode  bool
-	searchInput textinput.Model
-	filter      string
+	filter FilterBox
+	wrap   bool
 
 	width  int
 	height int
@@ -55,11 +54,6 @@ func NewLogsView(ctx config.Context, clients *awsclient.ClientSet, taskARN, task
 	sp.Spinner = spinner.Dot
 	sp.Style = ui.HealthyStyle
 
-	ti := textinput.New()
-	ti.Placeholder = "filter…"
-	ti.Prompt = "/ "
-	ti.CharLimit = 200
-
 	return LogsView{
 		viewport:      vp,
 		loading:       true,
@@ -72,7 +66,7 @@ func NewLogsView(ctx config.Context, clients *awsclient.ClientSet, taskARN, task
 		following:     true,
 		windowLabel:   "all",
 		windowSince:   time.Time{},
-		searchInput:   ti,
+		filter:        NewFilterBox(),
 	}
 }
 
@@ -87,7 +81,11 @@ func (m *LogsView) KeyHints() []string {
 	if m.following {
 		tailHint = "f:stop-follow"
 	}
-	return []string{tailHint, "/:search", "r:refresh", "esc:back", "q:quit"}
+	wrapHint := "w:wrap"
+	if m.wrap {
+		wrapHint = "w:no-wrap"
+	}
+	return []string{tailHint, wrapHint, "/:search", "r:refresh", "esc:back", "q:quit"}
 }
 
 // windowHints returns the k9s-style "Since" row rendered under the log body.
@@ -197,7 +195,7 @@ func (m *LogsView) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if len(m.rawEvents) > rawEventsCap {
 			m.rawEvents = m.rawEvents[len(m.rawEvents)-rawEventsCap:]
 		}
-		m.viewport.SetContent(renderLogs(m.rawEvents, m.filter, m.windowSince))
+		m.viewport.SetContent(renderLogs(m.rawEvents, m.filter.Value(), m.windowSince, m.wrap, m.viewport.Width))
 		if m.following {
 			m.viewport.GotoBottom()
 		}
@@ -217,29 +215,17 @@ func (m *LogsView) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case tea.KeyMsg:
-		if m.searchMode {
-			switch msg.String() {
-			case "enter":
-				m.filter = m.searchInput.Value()
-				m.searchMode = false
-				m.searchInput.Blur()
-				m.viewport.SetContent(renderLogs(m.rawEvents, m.filter, m.windowSince))
-				return m, nil
-			case "esc":
-				m.filter = ""
-				m.searchInput.SetValue("")
-				m.searchMode = false
-				m.searchInput.Blur()
-				m.viewport.SetContent(renderLogs(m.rawEvents, m.filter, m.windowSince))
-				return m, nil
-			}
-			var cmd tea.Cmd
-			m.searchInput, cmd = m.searchInput.Update(msg)
+		if handled, cmd := m.filter.HandleKey(msg); handled {
+			m.viewport.SetContent(renderLogs(m.rawEvents, m.filter.Value(), m.windowSince, m.wrap, m.viewport.Width))
 			return m, cmd
 		}
 
 		switch {
 		case key.Matches(msg, model.GlobalKeys.Back):
+			if m.filter.HandleBack() {
+				m.viewport.SetContent(renderLogs(m.rawEvents, m.filter.Value(), m.windowSince, m.wrap, m.viewport.Width))
+				return m, nil
+			}
 			return m, func() tea.Msg { return model.NavigatePopMsg{} }
 		case key.Matches(msg, model.GlobalKeys.Refresh):
 			if m.configLoaded {
@@ -248,16 +234,17 @@ func (m *LogsView) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, tea.Batch(m.spinner.Tick, m.fetchRecentCmd())
 			}
 		case key.Matches(msg, model.GlobalKeys.Search):
-			m.searchMode = true
-			m.searchInput.SetValue(m.filter)
-			m.searchInput.Focus()
-			return m, textinput.Blink
+			return m, m.filter.Start()
 		case msg.String() == "f":
 			m.following = !m.following
 			if m.following && m.configLoaded {
 				m.viewport.GotoBottom()
 				return m, m.tailLogsCmd()
 			}
+			return m, nil
+		case msg.String() == "w":
+			m.wrap = !m.wrap
+			m.viewport.SetContent(renderLogs(m.rawEvents, m.filter.Value(), m.windowSince, m.wrap, m.viewport.Width))
 			return m, nil
 		}
 
@@ -317,7 +304,7 @@ func windowForKey(k string) (windowChoice, bool) {
 func (m *LogsView) applyWindow(label string, since time.Time) tea.Cmd {
 	m.windowLabel = label
 	m.windowSince = since
-	m.viewport.SetContent(renderLogs(m.rawEvents, m.filter, m.windowSince))
+	m.viewport.SetContent(renderLogs(m.rawEvents, m.filter.Value(), m.windowSince, m.wrap, m.viewport.Width))
 	if m.following {
 		m.viewport.GotoBottom()
 	}
@@ -331,8 +318,8 @@ func (m *LogsView) View() string {
 	}
 	body := m.viewport.View()
 	windows := m.windowHints()
-	if m.searchMode {
-		return header + "\n" + body + "\n" + m.searchInput.View() + "\n" + windows
+	if m.filter.Active() {
+		return header + "\n" + body + "\n" + m.filter.View() + "\n" + windows
 	}
 	return header + "\n" + body + "\n" + windows
 }
@@ -345,11 +332,14 @@ func (m *LogsView) headerLine() string {
 	if m.windowLabel != "" {
 		parts = append(parts, ui.DimStyle.Render("window=["+m.windowLabel+"]"))
 	}
-	if m.filter != "" {
-		parts = append(parts, ui.DimStyle.Render(fmt.Sprintf("filter=%q", m.filter)))
+	if f := m.filter.Value(); f != "" {
+		parts = append(parts, ui.DimStyle.Render(fmt.Sprintf("filter=%q", f)))
 	}
 	if m.following {
 		parts = append(parts, ui.HealthyStyle.Render("[following]"))
+	}
+	if m.wrap {
+		parts = append(parts, ui.DimStyle.Render("[wrap]"))
 	}
 	return strings.Join(parts, "  ")
 }
@@ -357,10 +347,10 @@ func (m *LogsView) headerLine() string {
 func (m *LogsView) SetSize(w, h int) {
 	m.width = w
 	m.height = h
-	m.searchInput.Width = w - 4
+	m.filter.SetWidth(w)
 	// header (1) + body + windows-banner (1) + optional search (1) == h
 	body := h - 2
-	if m.searchMode {
+	if m.filter.Active() {
 		body -= 1
 	}
 	if body < 1 {
@@ -370,7 +360,7 @@ func (m *LogsView) SetSize(w, h int) {
 	m.viewport.Height = body
 }
 
-func renderLogs(events []domain.LogEvent, filter string, since time.Time) string {
+func renderLogs(events []domain.LogEvent, filter string, since time.Time, wrap bool, width int) string {
 	if len(events) == 0 {
 		return ui.DimStyle.Render("No log events found")
 	}
@@ -392,7 +382,11 @@ func renderLogs(events []domain.LogEvent, filter string, since time.Time) string
 		if filter != "" {
 			msg = highlightMatches(msg, filter)
 		}
-		b.WriteString(ts + "  " + msg + "\n")
+		line := ts + "  " + msg
+		if wrap && width > 0 {
+			line = lipgloss.NewStyle().Width(width).Render(line)
+		}
+		b.WriteString(line + "\n")
 	}
 	if inWindow == 0 {
 		return ui.DimStyle.Render(fmt.Sprintf("No events in this window (%d cached — press 0 to see all)", len(events)))
@@ -401,28 +395,6 @@ func renderLogs(events []domain.LogEvent, filter string, since time.Time) string
 		return ui.DimStyle.Render(fmt.Sprintf("No matches for %q in this window (%d events in window)", filter, inWindow))
 	}
 	return b.String()
-}
-
-// highlightMatches wraps all case-insensitive occurrences of `pat` in `s` with
-// the HighlightStyle. Returns the string with ANSI codes embedded.
-func highlightMatches(s, pat string) string {
-	if pat == "" {
-		return s
-	}
-	lowS := strings.ToLower(s)
-	lowP := strings.ToLower(pat)
-	var b strings.Builder
-	i := 0
-	for {
-		j := strings.Index(lowS[i:], lowP)
-		if j < 0 {
-			b.WriteString(s[i:])
-			return b.String()
-		}
-		b.WriteString(s[i : i+j])
-		b.WriteString(ui.HighlightStyle.Render(s[i+j : i+j+len(pat)]))
-		i += j + len(pat)
-	}
 }
 
 func truncate(s string, n int) string {

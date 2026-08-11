@@ -29,6 +29,7 @@ type TaskDescribeView struct {
 	clients  *awsclient.ClientSet
 	taskARN  string
 	spinner  spinner.Model
+	filter   FilterBox
 }
 
 func NewTaskDescribeView(ctx config.Context, clients *awsclient.ClientSet, taskARN string) TaskDescribeView {
@@ -44,13 +45,22 @@ func NewTaskDescribeView(ctx config.Context, clients *awsclient.ClientSet, taskA
 		clients:  clients,
 		taskARN:  taskARN,
 		spinner:  sp,
+		filter:   NewFilterBox(),
 	}
 }
 
 func (m *TaskDescribeView) ViewID() model.ViewID { return model.ViewTaskDescribe }
 
 func (m *TaskDescribeView) KeyHints() []string {
-	return []string{"↑/k:up", "↓/j:down", "r:refresh", "esc:back", "q:quit"}
+	return []string{"↑/k:up", "↓/j:down", "/:search", "r:refresh", "esc:back", "q:quit"}
+}
+
+func (m *TaskDescribeView) renderContent() string {
+	text := renderTaskDetail(m.detail)
+	if f := m.filter.Value(); f != "" {
+		text = highlightMatches(text, f)
+	}
+	return text
 }
 
 func (m *TaskDescribeView) Init() tea.Cmd {
@@ -78,16 +88,27 @@ func (m *TaskDescribeView) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.err = nil
 		m.detail = msg.Detail
 		m.loaded = true
-		m.viewport.SetContent(renderTaskDetail(msg.Detail))
+		m.viewport.SetContent(m.renderContent())
 		return m, nil
 
 	case tea.KeyMsg:
+		if handled, cmd := m.filter.HandleKey(msg); handled {
+			m.viewport.SetContent(m.renderContent())
+			return m, cmd
+		}
+
 		switch {
 		case key.Matches(msg, model.GlobalKeys.Back):
+			if m.filter.HandleBack() {
+				m.viewport.SetContent(m.renderContent())
+				return m, nil
+			}
 			return m, func() tea.Msg { return model.NavigatePopMsg{} }
 		case key.Matches(msg, model.GlobalKeys.Refresh):
 			m.loading = true
 			return m, tea.Batch(m.spinner.Tick, m.fetchCmd())
+		case key.Matches(msg, model.GlobalKeys.Search):
+			return m, m.filter.Start()
 		}
 
 	case spinner.TickMsg:
@@ -109,12 +130,20 @@ func (m *TaskDescribeView) View() string {
 	if m.loading && !m.loaded {
 		return title + "\n\n  " + m.spinner.View() + " Loading task details…"
 	}
+	if m.filter.Active() {
+		return title + "\n" + m.viewport.View() + "\n" + m.filter.View()
+	}
 	return title + "\n" + m.viewport.View()
 }
 
 func (m *TaskDescribeView) SetSize(w, h int) {
+	m.filter.SetWidth(w)
+	extra := 2
+	if m.filter.Active() {
+		extra++
+	}
 	m.viewport.Width = w
-	m.viewport.Height = h - 2
+	m.viewport.Height = h - extra
 	if m.viewport.Height < 1 {
 		m.viewport.Height = 1
 	}

@@ -66,6 +66,12 @@ type TaskDetailMsg struct {
 	Err    error
 }
 
+type TaskDefRawMsg struct {
+	JSON string
+	YAML string
+	Err  error
+}
+
 type ClusterTasksLoadedMsg struct {
 	Tasks []domain.ECSTask
 	Err   error

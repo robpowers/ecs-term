@@ -178,6 +178,13 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.statusBar.LastRefresh = time.Now()
 		}
 
+	case TaskDefRawMsg:
+		if msg.Err != nil {
+			m.errOverlay.Show(msg.Err.Error())
+		} else {
+			m.statusBar.LastRefresh = time.Now()
+		}
+
 	case ClusterTasksLoadedMsg:
 		if msg.Err != nil {
 			m.errOverlay.Show(msg.Err.Error())
