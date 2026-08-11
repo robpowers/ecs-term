@@ -63,3 +63,19 @@ func StatusColor(status string) lipgloss.Style {
 		return DimStyle
 	}
 }
+
+// StatusColorSafe is StatusColor bound to tableRenderer — use this (never
+// StatusColor) for any text embedded in a bubbles/table cell. See
+// tableRenderer's doc comment in styles.go for why.
+func StatusColorSafe(status string) lipgloss.Style {
+	switch strings.ToUpper(status) {
+	case "RUNNING", "ACTIVE", "HEALTHY":
+		return TableHealthyStyle
+	case "PENDING", "PROVISIONING", "ACTIVATING", "DEACTIVATING", "STOPPING", "DEPROVISIONING":
+		return TableWarningStyle
+	case "STOPPED", "INACTIVE", "DRAINING", "FAILED", "ERROR", "UNHEALTHY":
+		return TableErrorStyle
+	default:
+		return TableDimStyle
+	}
+}

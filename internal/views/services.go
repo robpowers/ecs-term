@@ -27,7 +27,10 @@ var serviceSortOptions = []sortOption{
 // Fixed widths for the non-name columns (content width, excluding cell padding).
 // Each column adds 2 for cell padding (Padding(0,1) = 1 left + 1 right).
 const (
-	colStatusW   = 10
+	// colStatusW must comfortably exceed the ANSI-inflated width of the
+	// longest colored status text (bubbles/table's cell truncation isn't
+	// ANSI-aware — see ui.StatusColorSafe's doc comment).
+	colStatusW   = 24
 	colCountW    = 8
 	colDeployedW = 19
 	colPadding   = 2
@@ -344,7 +347,7 @@ func toTableRows(services []domain.ECSService) []table.Row {
 		}
 		rows[i] = table.Row{
 			indicator + " " + s.Name,
-			ui.StatusColor(s.Status).Render(s.Status),
+			ui.StatusColorSafe(s.Status).Render(s.Status),
 			fmt.Sprintf("%d", s.DesiredCount),
 			fmt.Sprintf("%d", s.RunningCount),
 			fmt.Sprintf("%d", s.PendingCount),

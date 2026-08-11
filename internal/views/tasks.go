@@ -23,7 +23,9 @@ import (
 const (
 	taskColIDW      = 12
 	taskColStartedW = 19
-	taskColStatusW  = 10
+	// taskColStatusW must comfortably exceed the ANSI-inflated width of the
+	// longest colored status text — see ui.StatusColorSafe's doc comment.
+	taskColStatusW  = 24
 	taskColPadding  = 2
 	taskNumCols     = 4
 	taskFixedWidths = taskColIDW + taskColStartedW + taskColStatusW + taskColPadding*taskNumCols
@@ -358,7 +360,7 @@ func toTaskTableRows(tasks []domain.ECSTask) []table.Row {
 		rows[i] = table.Row{
 			t.ShortID,
 			started,
-			ui.StatusColor(t.LastStatus).Render(t.LastStatus),
+			ui.StatusColorSafe(t.LastStatus).Render(t.LastStatus),
 			strings.Join(names, ", "),
 		}
 	}

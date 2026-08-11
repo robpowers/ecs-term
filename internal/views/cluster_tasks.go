@@ -22,7 +22,9 @@ import (
 const (
 	ctColIDW      = 12
 	ctColStartedW = 19
-	ctColStatusW  = 10
+	// ctColStatusW must comfortably exceed the ANSI-inflated width of the
+	// longest colored status text — see ui.StatusColorSafe's doc comment.
+	ctColStatusW  = 24
 	ctColGroupW   = 26
 	ctColPadding  = 2
 	ctNumCols     = 5
@@ -309,7 +311,7 @@ func toClusterTaskRows(tasks []domain.ECSTask) []table.Row {
 		rows[i] = table.Row{
 			t.ShortID,
 			started,
-			ui.StatusColor(t.LastStatus).Render(t.LastStatus),
+			ui.StatusColorSafe(t.LastStatus).Render(t.LastStatus),
 			t.Group,
 			strings.Join(names, ", "),
 		}

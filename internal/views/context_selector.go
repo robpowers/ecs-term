@@ -1,6 +1,8 @@
 package views
 
 import (
+	"strings"
+
 	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/table"
 	tea "github.com/charmbracelet/bubbletea"
@@ -24,8 +26,10 @@ const (
 type ContextSelector struct {
 	table   table.Model
 	items   []config.Context
+	visible []config.Context
 	clients map[string]*awsclient.ClientSet
 	cfg     *config.Config
+	filter  FilterBox
 	width   int
 	height  int
 }
@@ -45,6 +49,7 @@ func NewContextSelector(cfg *config.Config, clients map[string]*awsclient.Client
 		items:   cfg.Contexts,
 		clients: clients,
 		cfg:     cfg,
+		filter:  NewFilterBox(),
 	}
 }
 
@@ -59,7 +64,7 @@ func contextTableStyles() table.Styles {
 func (m *ContextSelector) ViewID() model.ViewID { return model.ViewContextSelector }
 
 func (m *ContextSelector) KeyHints() []string {
-	return []string{"↑/k:up", "↓/j:down", "enter:select", "q:quit"}
+	return []string{"↑/k:up", "↓/j:down", "enter:select", "/:filter", "esc:back", "q:quit"}
 }
 
 func (m *ContextSelector) Init() tea.Cmd { return nil }
@@ -67,15 +72,26 @@ func (m *ContextSelector) Init() tea.Cmd { return nil }
 func (m *ContextSelector) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
+		if handled, cmd := m.filter.HandleKey(msg); handled {
+			m.refreshRows()
+			return m, cmd
+		}
+
 		switch {
 		case key.Matches(msg, model.GlobalKeys.Back):
-			return m, func() tea.Msg { return model.NavigatePopMsg{} }
-		case key.Matches(msg, model.GlobalKeys.Enter):
-			cursor := m.table.Cursor()
-			if cursor < 0 || cursor >= len(m.items) {
+			if m.filter.HandleBack() {
+				m.refreshRows()
 				return m, nil
 			}
-			ctx := m.items[cursor]
+			return m, func() tea.Msg { return model.NavigatePopMsg{} }
+		case key.Matches(msg, model.GlobalKeys.Search):
+			return m, m.filter.Start()
+		case key.Matches(msg, model.GlobalKeys.Enter):
+			cursor := m.table.Cursor()
+			if cursor < 0 || cursor >= len(m.visible) {
+				return m, nil
+			}
+			ctx := m.visible[cursor]
 			cs := m.clients[ctx.Name]
 			sv := NewServicesView(ctx, cs)
 			return m, tea.Batch(
@@ -103,12 +119,17 @@ func (m *ContextSelector) View() string {
 		return ui.DimStyle.Render("\n  No contexts configured")
 	}
 	title := ui.TitleStyle.Width(m.width).Align(lipgloss.Center).Render("Contexts")
-	return lipgloss.JoinVertical(lipgloss.Left, title, m.table.View())
+	lines := []string{title, m.table.View()}
+	if m.filter.Active() {
+		lines = append(lines, m.filter.View())
+	}
+	return lipgloss.JoinVertical(lipgloss.Left, lines...)
 }
 
 func (m *ContextSelector) SetSize(w, h int) {
 	m.width = w
 	m.height = h
+	m.filter.SetWidth(w)
 	nameW := w - ctxFixedWidths
 	if nameW < 10 {
 		nameW = 10
@@ -119,17 +140,48 @@ func (m *ContextSelector) SetSize(w, h int) {
 		{Title: "Region", Width: ctxColRegionW},
 		{Title: "SSO Profile", Width: ctxColProfileW},
 	})
-	m.table.SetRows(toContextTableRows(m.items))
+	m.refreshRows()
 	if m.cfg.CurrentContext != "" {
-		for i, ctx := range m.items {
+		for i, ctx := range m.visible {
 			if ctx.Name == m.cfg.CurrentContext {
 				m.table.SetCursor(i)
 				break
 			}
 		}
 	}
-	m.table.SetHeight(h - 2)
+	extra := 2
+	if m.filter.Active() {
+		extra++
+	}
+	th := h - extra
+	if th < 1 {
+		th = 1
+	}
+	m.table.SetHeight(th)
 	m.table.SetWidth(w)
+}
+
+func (m *ContextSelector) refreshRows() {
+	m.visible = filterContexts(m.items, m.filter.Value())
+	m.table.SetRows(toContextTableRows(m.visible))
+}
+
+func filterContexts(items []config.Context, query string) []config.Context {
+	if query == "" {
+		return append([]config.Context(nil), items...)
+	}
+	q := strings.ToLower(query)
+	out := make([]config.Context, 0, len(items))
+	for _, ctx := range items {
+		fields := []string{ctx.Name, ctx.Cluster, ctx.Region, ctx.AWSProfile}
+		for _, f := range fields {
+			if strings.Contains(strings.ToLower(f), q) {
+				out = append(out, ctx)
+				break
+			}
+		}
+	}
+	return out
 }
 
 func toContextTableRows(contexts []config.Context) []table.Row {
