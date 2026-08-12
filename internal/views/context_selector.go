@@ -119,7 +119,7 @@ func (m *ContextSelector) View() string {
 		return ui.DimStyle.Render("\n  No contexts configured")
 	}
 	title := ui.TitleStyle.Width(m.width).Align(lipgloss.Center).Render("Contexts")
-	lines := []string{title, m.table.View()}
+	lines := []string{title, withHeaderRules(m.table.View(), m.width)}
 	if m.filter.Active() {
 		lines = append(lines, m.filter.View())
 	}
@@ -149,7 +149,7 @@ func (m *ContextSelector) SetSize(w, h int) {
 			}
 		}
 	}
-	extra := 2
+	extra := 4 // title (1) + 2 header rules
 	if m.filter.Active() {
 		extra++
 	}

@@ -29,7 +29,7 @@ var serviceSortOptions = []sortOption{
 const (
 	// colStatusW must comfortably exceed the ANSI-inflated width of the
 	// longest colored status text (bubbles/table's cell truncation isn't
-	// ANSI-aware — see ui.StatusColorSafe's doc comment).
+	// ANSI-aware — see ui.StatusColorSafeText's doc comment).
 	colStatusW   = 24
 	colCountW    = 8
 	colDeployedW = 19
@@ -227,7 +227,7 @@ func (m *ServicesView) View() string {
 		return ui.DimStyle.Render("\n  No services found")
 	}
 	title := ui.TitleStyle.Width(m.width).Align(lipgloss.Center).Render("Services")
-	lines := []string{title, m.table.View()}
+	lines := []string{title, withHeaderRules(m.table.View(), m.width)}
 	if m.filter.Active() {
 		lines = append(lines, m.filter.View())
 	}
@@ -253,8 +253,9 @@ func (m *ServicesView) SetSize(w, h int) {
 	})
 	// table.View() = header (1 line) + "\n" + viewport.
 	// SetHeight(h) sets viewport.Height = h - lipgloss.Height(header) = h - 1.
-	// Title (1) + sort banner (1) [+ filter box (1)] take the rest of the rows.
-	extra := 3
+	// Title (1) + 2 header rules + sort banner (1) [+ filter box (1)] take
+	// the rest of the rows.
+	extra := 5
 	if m.filter.Active() {
 		extra++
 	}
@@ -347,7 +348,7 @@ func toTableRows(services []domain.ECSService) []table.Row {
 		}
 		rows[i] = table.Row{
 			indicator + " " + s.Name,
-			ui.StatusColorSafe(s.Status).Render(s.Status),
+			ui.StatusColorSafeText(s.Status),
 			fmt.Sprintf("%d", s.DesiredCount),
 			fmt.Sprintf("%d", s.RunningCount),
 			fmt.Sprintf("%d", s.PendingCount),

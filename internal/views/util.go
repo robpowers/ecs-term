@@ -53,3 +53,16 @@ func sortKeyMatch(options []sortOption, s string) bool {
 	}
 	return false
 }
+
+// withHeaderRules wraps a bubbles/table View() output with a horizontal
+// rule directly above and below the header row. table.Model.View() always
+// renders as "<header line>\n<body>", so splitting on the first newline
+// isolates the header from the row data.
+func withHeaderRules(tableView string, width int) string {
+	rule := ui.DimStyle.Render(strings.Repeat("─", width))
+	header, body, hasBody := strings.Cut(tableView, "\n")
+	if !hasBody {
+		return rule + "\n" + header + "\n" + rule
+	}
+	return rule + "\n" + header + "\n" + rule + "\n" + body
+}

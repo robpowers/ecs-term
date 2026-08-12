@@ -24,7 +24,7 @@ const (
 	taskColIDW      = 12
 	taskColStartedW = 19
 	// taskColStatusW must comfortably exceed the ANSI-inflated width of the
-	// longest colored status text — see ui.StatusColorSafe's doc comment.
+	// longest colored status text — see ui.StatusColorSafeText's doc comment.
 	taskColStatusW  = 24
 	taskColPadding  = 2
 	taskNumCols     = 4
@@ -244,7 +244,7 @@ func (m *TasksView) View() string {
 		return ui.DimStyle.Render("\n  No running tasks")
 	}
 	title := ui.TitleStyle.Width(m.width).Align(lipgloss.Center).Render("Tasks")
-	lines := []string{title, m.table.View()}
+	lines := []string{title, withHeaderRules(m.table.View(), m.width)}
 	if m.filter.Active() {
 		lines = append(lines, m.filter.View())
 	}
@@ -266,7 +266,7 @@ func (m *TasksView) SetSize(w, h int) {
 		{Title: "Status", Width: taskColStatusW},
 		{Title: "Containers", Width: containersW},
 	})
-	extra := 3
+	extra := 5 // title (1) + 2 header rules + sort banner (1)
 	if m.filter.Active() {
 		extra++
 	}
@@ -360,7 +360,7 @@ func toTaskTableRows(tasks []domain.ECSTask) []table.Row {
 		rows[i] = table.Row{
 			t.ShortID,
 			started,
-			ui.StatusColorSafe(t.LastStatus).Render(t.LastStatus),
+			ui.StatusColorSafeText(t.LastStatus),
 			strings.Join(names, ", "),
 		}
 	}

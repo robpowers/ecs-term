@@ -1,11 +1,6 @@
 package ui
 
-import (
-	"io"
-
-	"github.com/charmbracelet/lipgloss"
-	"github.com/muesli/termenv"
-)
+import "github.com/charmbracelet/lipgloss"
 
 var (
 	ColorPrimary   = lipgloss.Color("#00ADD8") // Go cyan / k9s-like
@@ -58,28 +53,4 @@ var (
 	HighlightStyle = lipgloss.NewStyle().
 			Foreground(lipgloss.Color("#000000")).
 			Background(ColorYellow)
-)
-
-// tableRenderer is pinned to the ANSI (4-bit, 16-color) profile so styled
-// text has a short, predictable escape-sequence length. bubbles/table
-// (v1.0.0) truncates cell content with go-runewidth, which is not
-// ANSI-aware — it counts every byte of a color escape sequence as a
-// printable character. With the default renderer's auto-detected profile
-// (often TrueColor, ~20+ escape bytes per styled cell) that miscount causes
-// truncation to cut through the escape codes and corrupt the terminal's
-// render state. Styles built from this renderer keep sequences short enough
-// that the status column widths (see services.go/tasks.go/cluster_tasks.go)
-// comfortably stay under bubbles' truncation threshold, so it never
-// triggers. Never embed styles from the default renderer in table cell text.
-var tableRenderer = func() *lipgloss.Renderer {
-	r := lipgloss.NewRenderer(io.Discard)
-	r.SetColorProfile(termenv.ANSI)
-	return r
-}()
-
-var (
-	TableHealthyStyle = tableRenderer.NewStyle().Foreground(ColorGreen)
-	TableWarningStyle = tableRenderer.NewStyle().Foreground(ColorYellow)
-	TableErrorStyle   = tableRenderer.NewStyle().Foreground(ColorRed)
-	TableDimStyle     = tableRenderer.NewStyle().Foreground(ColorDim)
 )

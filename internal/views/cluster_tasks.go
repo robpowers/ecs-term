@@ -23,7 +23,7 @@ const (
 	ctColIDW      = 12
 	ctColStartedW = 19
 	// ctColStatusW must comfortably exceed the ANSI-inflated width of the
-	// longest colored status text — see ui.StatusColorSafe's doc comment.
+	// longest colored status text — see ui.StatusColorSafeText's doc comment.
 	ctColStatusW  = 24
 	ctColGroupW   = 26
 	ctColPadding  = 2
@@ -227,7 +227,7 @@ func (m *ClusterTasksView) View() string {
 		return ui.DimStyle.Render("\n  No standalone tasks")
 	}
 	title := ui.TitleStyle.Width(m.width).Align(lipgloss.Center).Render("Standalone Tasks")
-	lines := []string{title, m.table.View()}
+	lines := []string{title, withHeaderRules(m.table.View(), m.width)}
 	if m.filter.Active() {
 		lines = append(lines, m.filter.View())
 	}
@@ -249,7 +249,7 @@ func (m *ClusterTasksView) SetSize(w, h int) {
 		{Title: "Group", Width: ctColGroupW},
 		{Title: "Containers", Width: containersW},
 	})
-	extra := 2
+	extra := 4 // title (1) + 2 header rules
 	if m.filter.Active() {
 		extra++
 	}
@@ -311,7 +311,7 @@ func toClusterTaskRows(tasks []domain.ECSTask) []table.Row {
 		rows[i] = table.Row{
 			t.ShortID,
 			started,
-			ui.StatusColorSafe(t.LastStatus).Render(t.LastStatus),
+			ui.StatusColorSafeText(t.LastStatus),
 			t.Group,
 			strings.Join(names, ", "),
 		}
