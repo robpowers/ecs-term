@@ -85,8 +85,10 @@ func (m *LogsView) KeyHints() []string {
 	if m.wrap {
 		wrapHint = "w:no-wrap"
 	}
-	return []string{tailHint, wrapHint, "/:search", "r:refresh", "esc:back", "q:quit"}
+	return []string{tailHint, wrapHint, "/:search", "r:refresh", "esc:back", "q:quit", "?:help"}
 }
+
+func (m *LogsView) IsCapturingInput() bool { return m.filter.Active() }
 
 // windowHints returns the k9s-style "Since" row rendered under the log body.
 // The currently active window is highlighted.

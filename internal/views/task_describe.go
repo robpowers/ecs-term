@@ -52,8 +52,10 @@ func NewTaskDescribeView(ctx config.Context, clients *awsclient.ClientSet, taskA
 func (m *TaskDescribeView) ViewID() model.ViewID { return model.ViewTaskDescribe }
 
 func (m *TaskDescribeView) KeyHints() []string {
-	return []string{"↑/k:up", "↓/j:down", "/:search", "r:refresh", "esc:back", "q:quit"}
+	return []string{"↑/k:up", "↓/j:down", "/:search", "r:refresh", "esc:back", "q:quit", "?:help"}
 }
+
+func (m *TaskDescribeView) IsCapturingInput() bool { return m.filter.Active() }
 
 func (m *TaskDescribeView) renderContent() string {
 	text := renderTaskDetail(m.detail)

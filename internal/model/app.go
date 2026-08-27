@@ -17,6 +17,7 @@ type AppModel struct {
 	navigator           Navigator
 	statusBar           ui.StatusBar
 	errOverlay          ui.ErrorOverlay
+	helpOverlay         ui.HelpOverlay
 	width               int
 	height              int
 	allClients          map[string]*awsclient.ClientSet
@@ -73,6 +74,18 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
+	// Help overlay intercepts "?"/Esc when visible and blocks everything else
+	if m.helpOverlay.Visible {
+		switch msg := msg.(type) {
+		case tea.KeyMsg:
+			if msg.String() == "?" || key.Matches(msg, GlobalKeys.Back) {
+				m.helpOverlay.Hide()
+				return m, nil
+			}
+		}
+		return m, nil
+	}
+
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
@@ -88,6 +101,10 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.KeyMsg:
 		if key.Matches(msg, GlobalKeys.Quit) {
 			return m, tea.Quit
+		}
+		if msg.String() == "?" && !m.navigator.Current().IsCapturingInput() {
+			m.helpOverlay.Toggle()
+			return m, nil
 		}
 
 	case NavigatePushMsg:
@@ -223,6 +240,7 @@ func (m AppModel) View() string {
 		content,
 		m.statusBar.Footer(),
 	)
+	full = m.helpOverlay.Render(full, m.navigator.Current().KeyHints(), m.width, m.height)
 	return m.errOverlay.Render(full, m.width, m.height)
 }
 

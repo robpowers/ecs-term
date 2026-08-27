@@ -62,8 +62,10 @@ func (m *ServiceEventsView) KeyHints() []string {
 	if m.wrap {
 		wrapHint = "w:no-wrap"
 	}
-	return []string{"↑/k:up", "↓/j:down", wrapHint, "/:filter", "r:refresh", "esc:back", "q:quit"}
+	return []string{"↑/k:up", "↓/j:down", wrapHint, "/:filter", "r:refresh", "esc:back", "q:quit", "?:help"}
 }
+
+func (m *ServiceEventsView) IsCapturingInput() bool { return m.filter.Active() }
 
 func (m *ServiceEventsView) Init() tea.Cmd {
 	return tea.Batch(m.spinner.Tick, m.fetchCmd())

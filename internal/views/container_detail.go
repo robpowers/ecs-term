@@ -50,8 +50,10 @@ func NewContainerDetailView(ctx config.Context, clients *awsclient.ClientSet, ta
 func (m *ContainerDetailView) ViewID() model.ViewID { return model.ViewContainerDetail }
 
 func (m *ContainerDetailView) KeyHints() []string {
-	return []string{"↑/k:up", "↓/j:down", "/:search", "esc:back", "q:quit"}
+	return []string{"↑/k:up", "↓/j:down", "/:search", "esc:back", "q:quit", "?:help"}
 }
+
+func (m *ContainerDetailView) IsCapturingInput() bool { return m.filter.Active() }
 
 func (m *ContainerDetailView) renderContent() string {
 	text := renderDetails(m.details)

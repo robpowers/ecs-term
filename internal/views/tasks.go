@@ -92,8 +92,10 @@ func tasksTableStyles() table.Styles {
 func (m *TasksView) ViewID() model.ViewID { return model.ViewTasks }
 
 func (m *TasksView) KeyHints() []string {
-	return []string{"↑/k:up", "↓/j:down", "l:logs", "d:describe", "c:container", "s:shell", "y:yaml", "J:json", "/:filter", "esc:back", "r:refresh", "q:quit"}
+	return []string{"↑/k:up", "↓/j:down", "l:logs", "d:describe", "c:container", "s:shell", "y:yaml", "J:json", "/:filter", "esc:back", "r:refresh", "q:quit", "?:help"}
 }
+
+func (m *TasksView) IsCapturingInput() bool { return m.filter.Active() }
 
 func (m *TasksView) Init() tea.Cmd {
 	return tea.Batch(

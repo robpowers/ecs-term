@@ -65,8 +65,10 @@ func contextTableStyles() table.Styles {
 func (m *ContextSelector) ViewID() model.ViewID { return model.ViewContextSelector }
 
 func (m *ContextSelector) KeyHints() []string {
-	return []string{"↑/k:up", "↓/j:down", "enter:select", "/:filter", "esc:back", "q:quit"}
+	return []string{"↑/k:up", "↓/j:down", "enter:select", "/:filter", "esc:back", "q:quit", "?:help"}
 }
+
+func (m *ContextSelector) IsCapturingInput() bool { return m.filter.Active() }
 
 func (m *ContextSelector) Init() tea.Cmd { return nil }
 

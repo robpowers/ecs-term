@@ -96,8 +96,10 @@ func servicesTableStyles() table.Styles {
 func (m *ServicesView) ViewID() model.ViewID { return model.ViewServices }
 
 func (m *ServicesView) KeyHints() []string {
-	return []string{"↑/k:up", "↓/j:down", "enter:tasks", "d:describe", "t:cluster-tasks", "e:events", "v:deployments", "/:filter", "esc:back", "r:refresh", "q:quit"}
+	return []string{"↑/k:up", "↓/j:down", "enter:tasks", "d:describe", "t:cluster-tasks", "e:events", "v:deployments", "/:filter", "esc:back", "r:refresh", "q:quit", "?:help"}
 }
+
+func (m *ServicesView) IsCapturingInput() bool { return m.filter.Active() }
 
 func (m *ServicesView) Init() tea.Cmd {
 	return tea.Batch(

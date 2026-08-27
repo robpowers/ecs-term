@@ -58,8 +58,10 @@ func NewTaskDefRawView(ctx config.Context, clients *awsclient.ClientSet, taskDef
 func (m *TaskDefRawView) ViewID() model.ViewID { return model.ViewTaskDefRaw }
 
 func (m *TaskDefRawView) KeyHints() []string {
-	return []string{"↑/k:up", "↓/j:down", "y:yaml", "J:json", "/:search", "r:refresh", "esc:back", "q:quit"}
+	return []string{"↑/k:up", "↓/j:down", "y:yaml", "J:json", "/:search", "r:refresh", "esc:back", "q:quit", "?:help"}
 }
+
+func (m *TaskDefRawView) IsCapturingInput() bool { return m.filter.Active() }
 
 func (m *TaskDefRawView) Init() tea.Cmd {
 	return tea.Batch(m.spinner.Tick, m.fetchCmd())

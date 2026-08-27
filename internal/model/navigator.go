@@ -25,6 +25,7 @@ type View interface {
 	ViewID() ViewID
 	SetSize(width, height int)
 	KeyHints() []string
+	IsCapturingInput() bool
 }
 
 type Navigator struct {

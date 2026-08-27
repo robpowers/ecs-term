@@ -35,8 +35,10 @@ func NewContainerPickerView(taskARN, taskDefARN string, containers []string, act
 func (m *ContainerPickerView) ViewID() model.ViewID { return model.ViewContainerPicker }
 
 func (m *ContainerPickerView) KeyHints() []string {
-	return []string{"↑/k:up", "↓/j:down", "enter:shell", "esc:cancel", "q:quit"}
+	return []string{"↑/k:up", "↓/j:down", "enter:shell", "esc:cancel", "q:quit", "?:help"}
 }
+
+func (m *ContainerPickerView) IsCapturingInput() bool { return false }
 
 func (m *ContainerPickerView) Init() tea.Cmd { return nil }
 

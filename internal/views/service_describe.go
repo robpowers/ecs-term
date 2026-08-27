@@ -51,8 +51,10 @@ func NewServiceDescribeView(ctx config.Context, clients *awsclient.ClientSet, se
 func (m *ServiceDescribeView) ViewID() model.ViewID { return model.ViewServiceDescribe }
 
 func (m *ServiceDescribeView) KeyHints() []string {
-	return []string{"↑/k:up", "↓/j:down", "/:search", "r:refresh", "esc:back", "q:quit"}
+	return []string{"↑/k:up", "↓/j:down", "/:search", "r:refresh", "esc:back", "q:quit", "?:help"}
 }
+
+func (m *ServiceDescribeView) IsCapturingInput() bool { return m.filter.Active() }
 
 func (m *ServiceDescribeView) renderContent() string {
 	text := renderServiceDetail(m.detail)

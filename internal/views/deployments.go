@@ -54,8 +54,10 @@ func NewDeploymentsView(ctx config.Context, clients *awsclient.ClientSet, servic
 func (m *DeploymentsView) ViewID() model.ViewID { return model.ViewDeployments }
 
 func (m *DeploymentsView) KeyHints() []string {
-	return []string{"↑/k:up", "↓/j:down", "/:filter", "r:refresh", "esc:back", "q:quit"}
+	return []string{"↑/k:up", "↓/j:down", "/:filter", "r:refresh", "esc:back", "q:quit", "?:help"}
 }
+
+func (m *DeploymentsView) IsCapturingInput() bool { return m.filter.Active() }
 
 func (m *DeploymentsView) Init() tea.Cmd {
 	return tea.Batch(m.spinner.Tick, m.fetchCmd())
