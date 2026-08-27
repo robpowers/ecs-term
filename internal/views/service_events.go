@@ -11,6 +11,7 @@ import (
 	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 
 	awsclient "github.com/robpowers/ecs-term/internal/aws"
 	"github.com/robpowers/ecs-term/internal/config"
@@ -34,6 +35,7 @@ type ServiceEventsView struct {
 	serviceName string
 	spinner     spinner.Model
 	filter      FilterBox
+	wrap        bool
 }
 
 func NewServiceEventsView(ctx config.Context, clients *awsclient.ClientSet, serviceName string) ServiceEventsView {
@@ -56,7 +58,11 @@ func NewServiceEventsView(ctx config.Context, clients *awsclient.ClientSet, serv
 func (m *ServiceEventsView) ViewID() model.ViewID { return model.ViewServiceEvents }
 
 func (m *ServiceEventsView) KeyHints() []string {
-	return []string{"↑/k:up", "↓/j:down", "/:filter", "r:refresh", "esc:back", "q:quit"}
+	wrapHint := "w:wrap"
+	if m.wrap {
+		wrapHint = "w:no-wrap"
+	}
+	return []string{"↑/k:up", "↓/j:down", wrapHint, "/:filter", "r:refresh", "esc:back", "q:quit"}
 }
 
 func (m *ServiceEventsView) Init() tea.Cmd {
@@ -86,19 +92,19 @@ func (m *ServiceEventsView) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		sort.SliceStable(events, func(i, j int) bool { return events[i].CreatedAt.After(events[j].CreatedAt) })
 		m.events = events
 		m.loaded = true
-		m.viewport.SetContent(renderServiceEvents(m.events, m.filter.Value()))
+		m.viewport.SetContent(renderServiceEvents(m.events, m.filter.Value(), m.wrap, m.viewport.Width))
 		return m, nil
 
 	case tea.KeyMsg:
 		if handled, cmd := m.filter.HandleKey(msg); handled {
-			m.viewport.SetContent(renderServiceEvents(m.events, m.filter.Value()))
+			m.viewport.SetContent(renderServiceEvents(m.events, m.filter.Value(), m.wrap, m.viewport.Width))
 			return m, cmd
 		}
 
 		switch {
 		case key.Matches(msg, model.GlobalKeys.Back):
 			if m.filter.HandleBack() {
-				m.viewport.SetContent(renderServiceEvents(m.events, m.filter.Value()))
+				m.viewport.SetContent(renderServiceEvents(m.events, m.filter.Value(), m.wrap, m.viewport.Width))
 				return m, nil
 			}
 			return m, func() tea.Msg { return model.NavigatePopMsg{} }
@@ -107,6 +113,10 @@ func (m *ServiceEventsView) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tea.Batch(m.spinner.Tick, m.fetchCmd())
 		case key.Matches(msg, model.GlobalKeys.Search):
 			return m, m.filter.Start()
+		case msg.String() == "w":
+			m.wrap = !m.wrap
+			m.viewport.SetContent(renderServiceEvents(m.events, m.filter.Value(), m.wrap, m.viewport.Width))
+			return m, nil
 		}
 
 	case spinner.TickMsg:
@@ -125,6 +135,9 @@ func (m *ServiceEventsView) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (m *ServiceEventsView) View() string {
 	title := ui.TitleStyle.Render("Events — " + m.serviceName)
+	if m.wrap {
+		title += "  " + ui.DimStyle.Render("[wrap]")
+	}
 	if m.loading && !m.loaded {
 		return title + "\n\n  " + m.spinner.View() + " Loading events…"
 	}
@@ -147,7 +160,7 @@ func (m *ServiceEventsView) SetSize(w, h int) {
 	}
 }
 
-func renderServiceEvents(events []domain.ServiceEvent, filter string) string {
+func renderServiceEvents(events []domain.ServiceEvent, filter string, wrap bool, width int) string {
 	if len(events) == 0 {
 		return ui.DimStyle.Render("No events found")
 	}
@@ -164,7 +177,11 @@ func renderServiceEvents(events []domain.ServiceEvent, filter string) string {
 		if filter != "" {
 			msg = highlightMatches(msg, filter)
 		}
-		b.WriteString(ts + "  " + msg + "\n")
+		line := ts + "  " + msg
+		if wrap && width > 0 {
+			line = lipgloss.NewStyle().Width(width).Render(line)
+		}
+		b.WriteString(line + "\n")
 	}
 	if filter != "" && matched == 0 {
 		return ui.DimStyle.Render(fmt.Sprintf("No matches for %q (%d events)", filter, len(events)))

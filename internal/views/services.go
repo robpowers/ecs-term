@@ -76,6 +76,7 @@ func NewServicesView(ctx config.Context, clients *awsclient.ClientSet) ServicesV
 		clients: clients,
 		spinner: sp,
 		filter:  NewFilterBox(),
+		sortKey: "N",
 		sortAsc: true,
 	}
 }

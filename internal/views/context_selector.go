@@ -1,6 +1,7 @@
 package views
 
 import (
+	"sort"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/key"
@@ -163,6 +164,9 @@ func (m *ContextSelector) SetSize(w, h int) {
 
 func (m *ContextSelector) refreshRows() {
 	m.visible = filterContexts(m.items, m.filter.Value())
+	sort.SliceStable(m.visible, func(i, j int) bool {
+		return strings.ToLower(m.visible[i].Name) < strings.ToLower(m.visible[j].Name)
+	})
 	m.table.SetRows(toContextTableRows(m.visible))
 }
 
