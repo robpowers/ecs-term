@@ -4,8 +4,6 @@ A terminal UI for monitoring AWS ECS clusters, inspired by [k9s](https://k9scli.
 
 > **Note on authorship:** The code in this repository was written by [Claude](https://www.anthropic.com/claude) (Anthropic's AI coding assistant) via [Claude Code](https://claude.com/claude-code), directed by the repository owner. This is called out here so nobody mistakes it for hand-written work.
 
-![Navigation: Context → Services → Tasks → Logs / Container Detail]
-
 ## Features
 
 - Browse ECS services with live, color-coded status and desired/running/pending task counts
