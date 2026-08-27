@@ -2,14 +2,22 @@
 
 A terminal UI for monitoring AWS ECS clusters, inspired by [k9s](https://k9scli.io/). Navigate your clusters, services, tasks, logs, and container definitions without leaving the terminal.
 
+> **Note on authorship:** The code in this repository was written by [Claude](https://www.anthropic.com/claude) (Anthropic's AI coding assistant) via [Claude Code](https://claude.com/claude-code), directed by the repository owner. This is called out here so nobody mistakes it for hand-written work.
+
 ![Navigation: Context → Services → Tasks → Logs / Container Detail]
 
 ## Features
 
-- Browse ECS services with live status (desired / running / pending task counts)
-- Drill into tasks and view per-container health and exit codes
-- Stream CloudWatch logs with optional follow-tail mode
-- Inspect task definition container details — environment variables, port mappings, resource limits, and health check configuration
+- Browse ECS services with live, color-coded status and desired/running/pending task counts
+- Sort any list by column (Services, Tasks) and filter any list or describe page with `/`
+- Drill into tasks, or browse all tasks in a cluster independent of any one service
+- Stream CloudWatch logs: follow-tail mode, quick lookback windows (1m–24h or all), client-side search with highlighting, and a line-wrap toggle
+- Shell into a running container (`aws ecs execute-command`), with an automatic picker when a task has multiple containers
+- Full describe views for services and tasks — deployments, events, load balancers, network config, attachments, and tags
+- Dedicated Service Events and Deployments pages
+- Raw task definition viewer (YAML or JSON)
+- Container detail view — environment variables, secrets, port mappings, resource limits, and health check configuration
+- Built-in `?` help overlay on every screen listing that screen's keyboard shortcuts
 - Auto-refreshes on a configurable interval (default 30 seconds)
 - Supports multiple clusters and AWS accounts via named profiles
 - Resizes dynamically with the terminal window
@@ -97,26 +105,69 @@ ecs-term --config ~/my-config.yaml
 
 ### Key bindings
 
+Every screen shows its own shortcuts in the footer, and pressing `?` opens a popup with the full list for whatever you're currently looking at — the tables below are a reference, not the source of truth.
+
+**Everywhere**
+
 | Key | Action |
 |---|---|
 | `j` / `↓` | Move down |
 | `k` / `↑` | Move up |
 | `Enter` | Select / drill in |
-| `Esc` | Go back |
-| `d` | View container details (from Tasks view) |
-| `f` | Toggle log follow-tail mode (from Logs view) |
+| `Esc` | Go back (clears an active filter first, if any) |
+| `/` | Filter the current list, or search the current text view |
 | `r` | Manual refresh |
+| `?` | Toggle the help popup for this screen |
 | `q` | Quit |
+
+**Services list**
+
+| Key | Action |
+|---|---|
+| `Enter` | Open the service's tasks |
+| `d` | Describe service (deployments, events, load balancers, network, tags) |
+| `e` | Service events |
+| `v` | Deployments |
+| `t` | Cluster-wide tasks list |
+| `Shift+N/S/D/R/P/L` | Sort by name / status / desired / running / pending / last-deployed (press again to reverse) |
+
+**Tasks list / Cluster tasks list**
+
+| Key | Action |
+|---|---|
+| `Enter` / `l` | Open logs (prompts for a container if there's more than one) |
+| `d` | Describe task (network, attachments, container runtime state, tags) |
+| `c` | Container detail (env vars, secrets, ports, health check) |
+| `s` | Shell into a container (`aws ecs execute-command`) |
+| `y` / `J` | Raw task definition as YAML / JSON |
+| `Shift+I/A/S/C` | Sort by task ID / age / status / container count |
+
+**Logs view**
+
+| Key | Action |
+|---|---|
+| `f` | Toggle follow-tail mode |
+| `w` | Toggle line wrapping |
+| `1`–`8`, `0` | Jump to a lookback window (1m…24h, `0` = all) |
 
 ### Navigation
 
 ```
-Context selector
-  └── Services list
-        └── Tasks list
-              ├── Logs view      (Enter on a task)
-              └── Container detail  (d on a task)
+Context selector                         (/ filter, sorted by name)
+  └── Services list                      (/ filter, sort by column)
+        ├── Tasks list                   (/ filter, sort by column)
+        │     ├── Logs view              (Enter or l on a task)
+        │     ├── Container detail       (c)
+        │     ├── Task describe          (d)
+        │     ├── Shell                  (s)
+        │     └── Raw task definition    (y / J)
+        ├── Service describe             (d)
+        ├── Service events               (e)
+        ├── Deployments                  (v)
+        └── Cluster tasks                (t — same sub-actions as the Tasks list above)
 ```
+
+A container picker pops up automatically in place of Shell/Logs when a task has more than one container.
 
 On startup, ecs-term shows a list of contexts from your config file. Select one to enter the services view for that cluster. If your config has a single context with `current_context` set, it jumps directly to the services view.
 
