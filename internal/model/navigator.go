@@ -10,6 +10,13 @@ const (
 	ViewTasks
 	ViewLogs
 	ViewContainerDetail
+	ViewServiceDescribe
+	ViewTaskDescribe
+	ViewClusterTasks
+	ViewContainerPicker
+	ViewServiceEvents
+	ViewDeployments
+	ViewTaskDefRaw
 )
 
 // View is the interface every view model must satisfy.
@@ -18,6 +25,7 @@ type View interface {
 	ViewID() ViewID
 	SetSize(width, height int)
 	KeyHints() []string
+	IsCapturingInput() bool
 }
 
 type Navigator struct {

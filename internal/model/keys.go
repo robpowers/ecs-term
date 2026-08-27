@@ -3,13 +3,19 @@ package model
 import "github.com/charmbracelet/bubbles/key"
 
 type GlobalKeyMap struct {
-	Up      key.Binding
-	Down    key.Binding
-	Enter   key.Binding
-	Back    key.Binding
-	Quit    key.Binding
-	Refresh key.Binding
-	Detail  key.Binding
+	Up       key.Binding
+	Down     key.Binding
+	Enter    key.Binding
+	Back     key.Binding
+	Quit     key.Binding
+	Refresh  key.Binding
+	Detail   key.Binding
+	Describe key.Binding
+	Tasks    key.Binding
+	Shell    key.Binding
+	Search    key.Binding
+	Container key.Binding
+	Logs      key.Binding
 }
 
 var GlobalKeys = GlobalKeyMap{
@@ -40,5 +46,29 @@ var GlobalKeys = GlobalKeyMap{
 	Detail: key.NewBinding(
 		key.WithKeys("d"),
 		key.WithHelp("d", "detail"),
+	),
+	Describe: key.NewBinding(
+		key.WithKeys("d"),
+		key.WithHelp("d", "describe"),
+	),
+	Tasks: key.NewBinding(
+		key.WithKeys("t"),
+		key.WithHelp("t", "tasks"),
+	),
+	Shell: key.NewBinding(
+		key.WithKeys("s"),
+		key.WithHelp("s", "shell"),
+	),
+	Search: key.NewBinding(
+		key.WithKeys("/"),
+		key.WithHelp("/", "search"),
+	),
+	Container: key.NewBinding(
+		key.WithKeys("c"),
+		key.WithHelp("c", "container"),
+	),
+	Logs: key.NewBinding(
+		key.WithKeys("l"),
+		key.WithHelp("l", "logs"),
 	),
 }

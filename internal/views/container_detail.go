@@ -27,6 +27,7 @@ type ContainerDetailView struct {
 	clients    *awsclient.ClientSet
 	taskDefARN string
 	spinner    spinner.Model
+	filter     FilterBox
 }
 
 func NewContainerDetailView(ctx config.Context, clients *awsclient.ClientSet, taskDefARN string) ContainerDetailView {
@@ -42,13 +43,24 @@ func NewContainerDetailView(ctx config.Context, clients *awsclient.ClientSet, ta
 		clients:    clients,
 		taskDefARN: taskDefARN,
 		spinner:    sp,
+		filter:     NewFilterBox(),
 	}
 }
 
 func (m *ContainerDetailView) ViewID() model.ViewID { return model.ViewContainerDetail }
 
 func (m *ContainerDetailView) KeyHints() []string {
-	return []string{"↑/k:up", "↓/j:down", "esc:back", "q:quit"}
+	return []string{"↑/k:up", "↓/j:down", "/:search", "esc:back", "q:quit", "?:help"}
+}
+
+func (m *ContainerDetailView) IsCapturingInput() bool { return m.filter.Active() }
+
+func (m *ContainerDetailView) renderContent() string {
+	text := renderDetails(m.details)
+	if f := m.filter.Value(); f != "" {
+		text = highlightMatches(text, f)
+	}
+	return text
 }
 
 func (m *ContainerDetailView) Init() tea.Cmd {
@@ -75,12 +87,23 @@ func (m *ContainerDetailView) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.err = nil
 		m.details = msg.Details
-		m.viewport.SetContent(renderDetails(msg.Details))
+		m.viewport.SetContent(m.renderContent())
 		return m, nil
 
 	case tea.KeyMsg:
-		if key.Matches(msg, model.GlobalKeys.Back) {
+		if handled, cmd := m.filter.HandleKey(msg); handled {
+			m.viewport.SetContent(m.renderContent())
+			return m, cmd
+		}
+		switch {
+		case key.Matches(msg, model.GlobalKeys.Back):
+			if m.filter.HandleBack() {
+				m.viewport.SetContent(m.renderContent())
+				return m, nil
+			}
 			return m, func() tea.Msg { return model.NavigatePopMsg{} }
+		case key.Matches(msg, model.GlobalKeys.Search):
+			return m, m.filter.Start()
 		}
 
 	case spinner.TickMsg:
@@ -102,12 +125,20 @@ func (m *ContainerDetailView) View() string {
 	if m.loading {
 		return title + "\n\n  " + m.spinner.View() + " Loading task definition…"
 	}
+	if m.filter.Active() {
+		return title + "\n" + m.viewport.View() + "\n" + m.filter.View()
+	}
 	return title + "\n" + m.viewport.View()
 }
 
 func (m *ContainerDetailView) SetSize(w, h int) {
+	m.filter.SetWidth(w)
+	extra := 2
+	if m.filter.Active() {
+		extra++
+	}
 	m.viewport.Width = w
-	m.viewport.Height = h - 2
+	m.viewport.Height = h - extra
 	if m.viewport.Height < 1 {
 		m.viewport.Height = 1
 	}
@@ -153,6 +184,13 @@ func renderDetails(details []domain.ContainerDetail) string {
 			b.WriteString("\n  " + ui.DimStyle.Render("Environment Variables") + "\n")
 			for _, e := range d.EnvVars {
 				b.WriteString(fmt.Sprintf("    %-30s = %s\n", e.Name, e.Value))
+			}
+		}
+
+		if len(d.Secrets) > 0 {
+			b.WriteString("\n  " + ui.DimStyle.Render("Secrets") + "\n")
+			for _, s := range d.Secrets {
+				b.WriteString(fmt.Sprintf("    %-30s ← %s\n", s.Name, s.ValueFrom))
 			}
 		}
 		b.WriteString("\n")

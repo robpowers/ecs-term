@@ -36,7 +36,11 @@ type TasksLoadedMsg struct {
 
 type LogEventsMsg struct {
 	Events []domain.LogEvent
-	Err    error
+	// Replace indicates the receiver should overwrite its buffer with Events
+	// rather than appending. Used for initial loads and manual refreshes;
+	// tail-poll results leave Replace false so new events are appended.
+	Replace bool
+	Err     error
 }
 
 type ContainerDetailMsg struct {
@@ -51,6 +55,48 @@ type LogConfigMsg struct {
 	ContainerName string
 	Err         error
 }
+
+type ServiceDetailMsg struct {
+	Detail domain.ECSServiceDetail
+	Err    error
+}
+
+type TaskDetailMsg struct {
+	Detail domain.ECSTaskDetail
+	Err    error
+}
+
+type TaskDefRawMsg struct {
+	JSON string
+	YAML string
+	Err  error
+}
+
+type ClusterTasksLoadedMsg struct {
+	Tasks []domain.ECSTask
+	Err   error
+}
+
+// ContainerAction is what the caller wants to do with the picked container.
+type ContainerAction int
+
+const (
+	ContainerActionShell ContainerAction = iota
+	ContainerActionLogs
+)
+
+// ContainerPickedMsg is emitted by ContainerPickerView after the user selects
+// a container. Action tells the parent view what to do with it.
+type ContainerPickedMsg struct {
+	TaskARN    string
+	TaskDefARN string
+	Name       string
+	Action     ContainerAction
+}
+
+// ExecFinishedMsg is emitted after `aws ecs execute-command` returns control
+// to the TUI.
+type ExecFinishedMsg struct{ Err error }
 
 // Refresh tick
 type RefreshTickMsg struct{ T time.Time }
